@@ -4,6 +4,14 @@ using CUDA
 using ..MCTSTypes
 using ..MemoryPool
 
+# Include synchronization module
+include("synchronization.jl")
+using .Synchronization
+
+# Include batch evaluation module
+include("batch_evaluation.jl")
+using .BatchEvaluation
+
 # Kernel state flags
 const KERNEL_RUNNING = UInt32(1)
 const KERNEL_STOPPING = UInt32(2)
@@ -29,6 +37,11 @@ struct KernelState
     expansions_count::CuArray{Int64, 1}
     evaluations_count::CuArray{Int64, 1}
     backups_count::CuArray{Int64, 1}
+    
+    # Synchronization components
+    grid_barrier::GridBarrier
+    phase_sync::PhaseSynchronizer
+    tree_sync::TreeSynchronizer
 end
 
 """
@@ -50,8 +63,8 @@ function persistent_mcts_kernel!(
     kernel_state::KernelState,
     work_queue::WorkQueue,
     config::PersistentKernelConfig,
-    eval_buffer::CuArray{Float32, 2},
-    eval_ready::CuArray{Int32, 1}
+    batch_buffer::EvalBatchBuffer,
+    eval_config::BatchEvalConfig
 )
     # Thread and block indices
     tid = threadIdx().x
@@ -82,27 +95,40 @@ function persistent_mcts_kernel!(
             
         elseif current_phase == WORK_EXPAND
             # Expansion phase - create new nodes
-            perform_expansion_phase!(tree, work_queue, config, gid, stride)
+            perform_expansion_phase!(tree, work_queue, kernel_state, config, gid, stride)
             
         elseif current_phase == WORK_EVALUATE
             # Evaluation phase - prepare batch for neural network
-            perform_evaluation_phase!(tree, work_queue, eval_buffer, eval_ready, gid, stride)
+            batch_eval_pipeline_kernel!(tree, work_queue, batch_buffer, eval_config, current_phase)
             
         elseif current_phase == WORK_BACKUP
             # Backup phase - propagate values up the tree
+            batch_eval_pipeline_kernel!(tree, work_queue, batch_buffer, eval_config, current_phase)
             perform_backup_phase!(tree, work_queue, config, gid, stride)
         end
         
-        # Synchronize all blocks at phase boundaries
-        grid_sync!(kernel_state)
+        # Synchronize all blocks at phase boundaries using new barrier
+        grid_barrier_sync!(
+            kernel_state.grid_barrier.arrival_count,
+            kernel_state.grid_barrier.release_count,
+            kernel_state.grid_barrier.generation,
+            kernel_state.grid_barrier.target_count,
+            bid, tid
+        )
         
-        # Transition to next phase (block 1, thread 1 only)
+        # Phase transition with proper synchronization
+        phase_barrier_sync!(
+            kernel_state.phase_sync.current_phase,
+            kernel_state.phase_sync.phase_counters,
+            kernel_state.phase_sync.phase_ready,
+            kernel_state.phase_sync.total_blocks,
+            current_phase, bid, tid
+        )
+        
+        # Only master thread updates iteration counter
         if bid == 1 && tid == 1
-            next_phase = (current_phase + 1) % 4
-            @inbounds kernel_state.phase[1] = next_phase
-            
-            # Increment iteration counter after full cycle
-            if next_phase == WORK_SELECT
+            # Check if we completed a full cycle
+            if current_phase == WORK_BACKUP
                 CUDA.atomic_add!(pointer(kernel_state.iteration), Int32(1))
                 
                 # Check termination condition
@@ -111,9 +137,6 @@ function persistent_mcts_kernel!(
                 end
             end
         end
-        
-        # Cooperative group sync
-        sync_threads()
     end
     
     # Kernel cleanup on exit
@@ -182,6 +205,7 @@ Expansion phase - create new child nodes
 function perform_expansion_phase!(
     tree::MCTSTreeSoA,
     work_queue::WorkQueue,
+    kernel_state::KernelState,
     config::PersistentKernelConfig,
     gid::Int32,
     stride::Int32
@@ -200,6 +224,19 @@ function perform_expansion_phase!(
         
         # Check if node can be expanded
         if @inbounds tree.node_states[node_idx] != NODE_ACTIVE
+            continue
+        end
+        
+        # Acquire write lock for node expansion
+        acquire_write_lock!(
+            kernel_state.tree_sync.read_locks,
+            kernel_state.tree_sync.write_locks,
+            node_idx
+        )
+        
+        # Double-check after acquiring lock
+        if @inbounds tree.node_states[node_idx] != NODE_ACTIVE
+            release_write_lock!(kernel_state.tree_sync.write_locks, node_idx)
             continue
         end
         
@@ -237,53 +274,14 @@ function perform_expansion_phase!(
             # Add to evaluation queue
             add_work_item!(work_queue, WORK_EVALUATE, node_idx, gid)
         end
+        
+        # Release write lock
+        release_write_lock!(kernel_state.tree_sync.write_locks, node_idx)
     end
     
     return nothing
 end
 
-"""
-Evaluation phase - prepare nodes for neural network evaluation
-"""
-function perform_evaluation_phase!(
-    tree::MCTSTreeSoA,
-    work_queue::WorkQueue,
-    eval_buffer::CuArray{Float32, 2},
-    eval_ready::CuArray{Int32, 1},
-    gid::Int32,
-    stride::Int32
-)
-    # Collect nodes needing evaluation
-    eval_count = @inbounds eval_ready[1]
-    
-    for idx in gid:stride:eval_count
-        if idx > size(eval_buffer, 2)
-            break
-        end
-        
-        # Get node from evaluation queue
-        node_idx = @inbounds Int32(eval_buffer[1, idx])
-        
-        if node_idx > 0 && node_idx <= MAX_NODES
-            # Convert feature mask to dense representation for NN
-            for feature_idx in 1:MAX_FEATURES
-                if has_feature(tree.feature_masks, node_idx, feature_idx)
-                    # Map to eval buffer column
-                    col_idx = 1 + mod(feature_idx - 1, size(eval_buffer, 1) - 1)
-                    @inbounds eval_buffer[col_idx + 1, idx] = 1.0f0
-                else
-                    col_idx = 1 + mod(feature_idx - 1, size(eval_buffer, 1) - 1)
-                    @inbounds eval_buffer[col_idx + 1, idx] = 0.0f0
-                end
-            end
-            
-            # Add to backup queue after evaluation
-            add_work_item!(work_queue, WORK_BACKUP, node_idx, gid)
-        end
-    end
-    
-    return nothing
-end
 
 """
 Backup phase - propagate values from leaves to root
@@ -417,36 +415,6 @@ Add work item to queue
     return nothing
 end
 
-"""
-Grid-wide synchronization using atomic counters
-"""
-function grid_sync!(kernel_state::KernelState)
-    tid = threadIdx().x
-    bid = blockIdx().x
-    
-    # Shared memory for intra-block sync
-    sync_counter = @cuDynamicSharedMem(Int32, 1)
-    
-    if tid == 1
-        # Each block increments global counter
-        old_val = CUDA.atomic_add!(pointer(kernel_state.work_counter), Int32(1))
-        @inbounds sync_counter[1] = old_val
-    end
-    
-    sync_threads()
-    
-    # Wait for all blocks
-    if tid == 1
-        expected = gridDim().x * (@inbounds sync_counter[1] ÷ gridDim().x + 1)
-        while @inbounds kernel_state.work_counter[1] < expected
-            # Spin wait
-        end
-    end
-    
-    sync_threads()
-    
-    return nothing
-end
 
 # Host-side kernel launcher
 function launch_persistent_kernel!(
@@ -454,6 +422,11 @@ function launch_persistent_kernel!(
     config::PersistentKernelConfig;
     device::CuDevice = CUDA.device()
 )
+    # Create synchronization components
+    grid_barrier = GridBarrier(config.grid_size)
+    phase_sync = PhaseSynchronizer(config.grid_size)
+    tree_sync = TreeSynchronizer(MAX_NODES)
+    
     # Allocate kernel state
     kernel_state = CUDA.device!(device) do
         KernelState(
@@ -464,7 +437,10 @@ function launch_persistent_kernel!(
             CUDA.zeros(Int64, 1),
             CUDA.zeros(Int64, 1),
             CUDA.zeros(Int64, 1),
-            CUDA.zeros(Int64, 1)
+            CUDA.zeros(Int64, 1),
+            grid_barrier,
+            phase_sync,
+            tree_sync
         )
     end
     
@@ -479,16 +455,27 @@ function launch_persistent_kernel!(
         )
     end
     
-    # Allocate evaluation buffer
-    eval_buffer = CUDA.zeros(Float32, MAX_FEATURES + 1, config.batch_size)
-    eval_ready = CUDA.zeros(Int32, 1)
+    # Create batch evaluation configuration
+    eval_config = BatchEvalConfig(
+        config.batch_size,
+        true,  # double buffering
+        256,   # eval threads
+        0.7f0  # coalesce threshold
+    )
+    
+    # Create batch evaluation buffer
+    batch_buffer = EvalBatchBuffer(
+        config.batch_size,
+        MAX_FEATURES,
+        32  # max actions
+    )
     
     # Launch kernel
     kernel = @cuda threads=config.block_size blocks=config.grid_size shmem=config.shared_mem_size persistent_mcts_kernel!(
-        tree, kernel_state, work_queue, config, eval_buffer, eval_ready
+        tree, kernel_state, work_queue, config, batch_buffer, eval_config
     )
     
-    return kernel, kernel_state, work_queue
+    return kernel, kernel_state, work_queue, batch_buffer
 end
 
 function stop_kernel!(kernel_state::KernelState)

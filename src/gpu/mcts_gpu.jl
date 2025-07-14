@@ -29,6 +29,8 @@ mutable struct MCTSGPUEngine
     kernel_task::Union{Nothing, Task}
     kernel_state::Union{Nothing, KernelState}
     work_queue::Union{Nothing, WorkQueue}
+    batch_buffer::Union{Nothing, EvalBatchBuffer}
+    batch_eval_manager::Union{Nothing, BatchEvalManager}
     
     # Statistics
     stats::TreeStatistics
@@ -65,8 +67,15 @@ mutable struct MCTSGPUEngine
         # Initialize statistics
         stats = TreeStatistics()
         
+        # Create batch evaluation manager
+        batch_eval_manager = BatchEvalManager(
+            batch_size = config.batch_size,
+            num_features = MAX_FEATURES,
+            max_actions = 32
+        )
+        
         new(tree, config, memory_manager,
-            nothing, nothing, nothing,
+            nothing, nothing, nothing, nothing, batch_eval_manager,
             stats, now(), device, false)
     end
 end
@@ -130,7 +139,7 @@ function start!(engine::MCTSGPUEngine)
     # Launch kernel asynchronously
     engine.kernel_task = @async begin
         CUDA.device!(engine.device) do
-            kernel, state, queue = launch_persistent_kernel!(
+            kernel, state, queue, batch_buffer = launch_persistent_kernel!(
                 engine.tree, 
                 engine.config,
                 device = engine.device
@@ -138,9 +147,24 @@ function start!(engine::MCTSGPUEngine)
             
             engine.kernel_state = state
             engine.work_queue = queue
+            engine.batch_buffer = batch_buffer
+            
+            # Process evaluation batches in parallel
+            eval_task = @async begin
+                while engine.is_running
+                    # Process pending batches with dummy evaluation
+                    process_eval_batches!(engine.batch_eval_manager) do features, scores, batch_size
+                        # Dummy evaluation - normally would call neural network
+                        scores .= 0.5f0 .+ 0.5f0 .* CUDA.rand(Float32, batch_size)
+                    end
+                    
+                    sleep(0.001)  # Small delay
+                end
+            end
             
             # Wait for kernel completion
             CUDA.synchronize()
+            wait(eval_task)
         end
     end
     
