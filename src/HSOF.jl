@@ -22,7 +22,14 @@ export initialize_project, validate_environment
 
 # Include submodules
 include("gpu/device_manager.jl")
-include("database/db_interface.jl")
+include("database/Database.jl")
+
+# Using and re-exporting submodules
+using .Database
+
+# Export main components
+export Database, DeviceManager
+export initialize_project, validate_environment, generate_sample_data
 
 # Module initialization
 function __init__()
@@ -126,6 +133,29 @@ function validate_environment()
     end
     
     return all_passed
+end
+
+"""
+    generate_sample_data(; n_samples::Int=1000, n_features::Int=100, n_informative::Int=20)
+
+Generate sample data for testing and development.
+"""
+function generate_sample_data(; n_samples::Int=1000, n_features::Int=100, n_informative::Int=20)
+    # Generate informative features
+    X_informative = randn(n_samples, n_informative)
+    
+    # Generate noise features
+    X_noise = randn(n_samples, n_features - n_informative)
+    
+    # Combine
+    X = hcat(X_informative, X_noise)
+    
+    # Generate target based on informative features
+    true_weights = randn(n_informative)
+    y_continuous = X_informative * true_weights + 0.1 * randn(n_samples)
+    y = Int.(y_continuous .> median(y_continuous))
+    
+    return X, y
 end
 
 end # module
