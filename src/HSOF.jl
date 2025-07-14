@@ -21,15 +21,18 @@ using TOML
 export initialize_project, validate_environment
 
 # Include submodules
-include("gpu/device_manager.jl")
+include("gpu/GPU.jl")
 include("database/Database.jl")
 
 # Using and re-exporting submodules
+using .GPU
 using .Database
 
 # Export main components
-export Database, DeviceManager
+export GPU, Database
 export initialize_project, validate_environment, generate_sample_data
+# GPU exports
+export MCTSGPUEngine, select_features
 
 # Module initialization
 function __init__()
