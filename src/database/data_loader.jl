@@ -8,8 +8,10 @@ using Statistics
 # Include dependencies
 include("connection_pool.jl")
 include("metadata_parser.jl")
+include("progress_tracker.jl")
 using .ConnectionPool
 using .MetadataParser
+using .ProgressTracker
 
 export ChunkIterator, DataChunk, LoaderConfig, create_chunk_iterator, 
        estimate_memory_usage, adaptive_chunk_size
@@ -24,6 +26,8 @@ Configuration for data loading
     adaptive_sizing::Bool = true
     order_by::Union{String, Nothing} = nothing
     where_clause::Union{String, Nothing} = nothing
+    progress_callback::Union{Function, Nothing} = nothing
+    show_progress::Bool = true
 end
 
 """
@@ -50,6 +54,7 @@ mutable struct ChunkIterator
     total_chunks::Int
     prefetch_buffer::Channel{DataChunk}
     prefetch_task::Union{Task, Nothing}
+    progress_tracker::Union{ProgressTracker.ProgressTracker, Nothing}
     closed::Bool
 end
 
@@ -104,6 +109,22 @@ function create_chunk_iterator(
     buffer_size = min(prefetch_chunks, total_chunks)
     prefetch_buffer = Channel{DataChunk}(buffer_size)
     
+    # Create progress tracker if needed
+    progress_tracker = if config.show_progress || !isnothing(config.progress_callback)
+        callback = isnothing(config.progress_callback) ? 
+                  ProgressTracker.console_progress_callback(80) : 
+                  config.progress_callback
+        
+        ProgressTracker.ProgressTracker(
+            total_rows,
+            total_chunks,
+            progress_callback = callback,
+            memory_limit_gb = memory_limit_gb
+        )
+    else
+        nothing
+    end
+    
     iterator = ChunkIterator(
         pool,
         metadata,
@@ -114,6 +135,7 @@ function create_chunk_iterator(
         total_chunks,
         prefetch_buffer,
         nothing,
+        progress_tracker,
         false
     )
     
@@ -242,6 +264,20 @@ function load_chunk(iterator::ChunkIterator, chunk_index::Int)
         # Execute query
         data = DBInterface.execute(conn.db, query) |> DataFrame
         
+        # Update progress if tracker exists
+        if !isnothing(iterator.progress_tracker)
+            rows = size(data, 1)
+            # Estimate bytes (8 bytes per numeric value + overhead)
+            bytes = rows * length(columns) * 8
+            ProgressTracker.update_progress!(
+                iterator.progress_tracker, 
+                rows, 
+                bytes,
+                chunk_completed = true,
+                message = "Loading chunk $chunk_index/$(iterator.total_chunks)"
+            )
+        end
+        
         # Create chunk
         is_last = chunk_index == iterator.total_chunks
         
@@ -301,6 +337,17 @@ function Base.close(iterator::ChunkIterator)
             wait(iterator.prefetch_task)
         catch
             # Ignore errors during shutdown
+        end
+    end
+    
+    # Finish progress tracking
+    if !isnothing(iterator.progress_tracker)
+        if iterator.current_chunk == iterator.total_chunks
+            ProgressTracker.finish_progress!(iterator.progress_tracker, success=true)
+        else
+            ProgressTracker.cancel_loading(iterator.progress_tracker)
+            ProgressTracker.finish_progress!(iterator.progress_tracker, success=false, 
+                                           message="Loading cancelled after chunk $(iterator.current_chunk)")
         end
     end
 end
