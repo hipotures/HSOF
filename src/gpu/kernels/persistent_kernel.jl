@@ -12,6 +12,10 @@ using .Synchronization
 include("batch_evaluation.jl")
 using .BatchEvaluation
 
+# Include warp optimization module
+include("warp_optimization.jl")
+using .WarpOptimization
+
 # Kernel state flags
 const KERNEL_RUNNING = UInt32(1)
 const KERNEL_STOPPING = UInt32(2)
@@ -42,6 +46,10 @@ struct KernelState
     grid_barrier::GridBarrier
     phase_sync::PhaseSynchronizer
     tree_sync::TreeSynchronizer
+    
+    # Optimization components
+    warp_scheduler::WarpScheduler
+    divergence_tracker::DivergenceTracker
 end
 
 """
@@ -91,7 +99,7 @@ function persistent_mcts_kernel!(
         
         if current_phase == WORK_SELECT
             # Selection phase - traverse tree to find leaf nodes
-            perform_selection_phase!(tree, work_queue, config, gid, stride)
+            perform_selection_phase!(tree, work_queue, kernel_state, kernel_state.warp_scheduler, config, gid, stride)
             
         elseif current_phase == WORK_EXPAND
             # Expansion phase - create new nodes
@@ -148,49 +156,71 @@ function persistent_mcts_kernel!(
 end
 
 """
-Selection phase - traverse tree using UCB1 to find leaf nodes
+Selection phase - traverse tree using UCB1 to find leaf nodes with warp optimization
 """
 function perform_selection_phase!(
     tree::MCTSTreeSoA,
     work_queue::WorkQueue,
+    kernel_state::KernelState,
+    warp_scheduler::WarpScheduler,
     config::PersistentKernelConfig,
     gid::Int32,
     stride::Int32
 )
-    # Each thread group processes different root paths
-    for start_idx in gid:stride:MAX_NODES
-        if @inbounds tree.node_states[start_idx] != NODE_ACTIVE
-            continue
-        end
+    tid = threadIdx().x
+    wid = (tid - 1) ÷ WARP_SIZE + 1
+    lane = (tid - 1) % WARP_SIZE + 1
+    
+    # Use warp-coherent traversal
+    if wid <= warp_scheduler.num_warps
+        work_count = @inbounds warp_scheduler.warp_work_assignments[1, wid]
         
-        current_idx = start_idx
-        path_length = 0
-        
-        # Traverse down to leaf
-        while current_idx > 0 && path_length < 100  # Prevent infinite loops
-            node_state = @inbounds tree.node_states[current_idx]
-            
-            if node_state == NODE_EMPTY || node_state == NODE_TERMINAL
-                break
-            end
-            
-            num_children = @inbounds tree.num_children[current_idx]
-            
-            if num_children == 0
-                # Found leaf node - add to expansion queue
-                add_work_item!(work_queue, WORK_EXPAND, current_idx, gid)
-                break
-            else
-                # Select best child using UCB1
-                best_child_idx = select_best_child_ucb1(tree, current_idx, config)
+        for i in 1:work_count
+            if i <= WARP_SIZE
+                start_idx = @inbounds warp_scheduler.warp_work_assignments[i, wid]
                 
-                if best_child_idx > 0
-                    # Apply virtual loss
-                    CUDA.atomic_add!(pointer(tree.visit_counts, best_child_idx), config.virtual_loss)
-                    current_idx = best_child_idx
-                    path_length += 1
-                else
-                    break
+                if start_idx > 0 && start_idx <= MAX_NODES
+                    # All threads in warp work on same node path
+                    current_idx = start_idx
+                    path_length = 0
+                    
+                    while current_idx > 0 && path_length < 100
+                        node_state = @inbounds tree.node_states[current_idx]
+                        
+                        # Check convergence - all threads see same state
+                        converged = warp_converged_loop(
+                            node_state == NODE_ACTIVE || node_state == NODE_EXPANDED,
+                            1
+                        )
+                        
+                        if !converged || node_state == NODE_EMPTY || node_state == NODE_TERMINAL
+                            break
+                        end
+                        
+                        num_children = @inbounds tree.num_children[current_idx]
+                        
+                        if num_children == 0
+                            # Found leaf - only lane 1 adds to queue
+                            if lane == 1
+                                add_work_item!(work_queue, WORK_EXPAND, current_idx, gid)
+                            end
+                            break
+                        else
+                            # Coherent child selection
+                            best_child_idx = process_node_coherent!(tree, current_idx, lane, config)
+                            
+                            if best_child_idx > 0
+                                # Apply virtual loss
+                                if lane == 1
+                                    CUDA.atomic_add!(pointer(tree.visit_counts, best_child_idx), config.virtual_loss)
+                                end
+                                current_idx = best_child_idx
+                                path_length += 1
+                            else
+                                break
+                            end
+                        end
+                    end
                 end
             end
         end
@@ -425,7 +455,22 @@ function launch_persistent_kernel!(
     # Create synchronization components
     grid_barrier = GridBarrier(config.grid_size)
     phase_sync = PhaseSynchronizer(config.grid_size)
-    tree_sync = TreeSynchronizer(MAX_NODES)
+    tree_sync = TreeSynchronizer(Int32(MAX_NODES))
+    
+    # Create optimization components
+    num_warps = div(config.block_size * config.grid_size, WARP_SIZE)
+    warp_scheduler = WarpScheduler(
+        CUDA.zeros(Int32, WARP_SIZE, num_warps),
+        CUDA.zeros(Int32, num_warps),
+        CUDA.zeros(Float32, num_warps),
+        num_warps
+    )
+    
+    divergence_tracker = DivergenceTracker(
+        CUDA.zeros(Int32, num_warps),
+        CUDA.zeros(Int32, 10, num_warps),  # Track up to 10 branch types
+        CUDA.zeros(UInt32, num_warps)
+    )
     
     # Allocate kernel state
     kernel_state = CUDA.device!(device) do
@@ -440,7 +485,9 @@ function launch_persistent_kernel!(
             CUDA.zeros(Int64, 1),
             grid_barrier,
             phase_sync,
-            tree_sync
+            tree_sync,
+            warp_scheduler,
+            divergence_tracker
         )
     end
     
@@ -466,8 +513,8 @@ function launch_persistent_kernel!(
     # Create batch evaluation buffer
     batch_buffer = EvalBatchBuffer(
         config.batch_size,
-        MAX_FEATURES,
-        32  # max actions
+        Int32(MAX_FEATURES),
+        Int32(32)  # max actions
     )
     
     # Launch kernel

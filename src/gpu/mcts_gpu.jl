@@ -3,18 +3,28 @@ module MCTSGPU
 using CUDA
 using Statistics
 using Dates
+using JSON3
 
 # Include kernel modules
 include("kernels/mcts_types.jl")
 include("kernels/memory_pool.jl")
+include("kernels/synchronization.jl")
+include("kernels/batch_evaluation.jl")
+include("kernels/warp_optimization.jl")
 include("kernels/persistent_kernel.jl")
+include("kernels/performance_profiling.jl")
 
 using .MCTSTypes
 using .MemoryPool
+using .Synchronization
+using .BatchEvaluation
+using .WarpOptimization
 using .PersistentKernel
+using .PerformanceProfiling
 
 export MCTSGPUEngine, initialize!, start!, stop!, get_statistics
 export select_features, get_best_features, reset_tree!
+export get_performance_report, export_performance_metrics
 
 """
 Main MCTS GPU Engine managing the persistent kernel and tree operations
@@ -35,6 +45,11 @@ mutable struct MCTSGPUEngine
     # Statistics
     stats::TreeStatistics
     start_time::DateTime
+    
+    # Performance monitoring
+    profiler::PerformanceProfiler
+    monitor::RealtimeMonitor
+    regression_detector::RegressionDetector
     
     # Device
     device::CuDevice
@@ -69,14 +84,21 @@ mutable struct MCTSGPUEngine
         
         # Create batch evaluation manager
         batch_eval_manager = BatchEvalManager(
-            batch_size = config.batch_size,
-            num_features = MAX_FEATURES,
-            max_actions = 32
+            batch_size = Int32(config.batch_size),
+            num_features = Int32(MAX_FEATURES),
+            max_actions = Int32(32)
         )
+        
+        # Create performance monitoring
+        profiler = PerformanceProfiler(Int32(config.grid_size))
+        monitor = RealtimeMonitor()
+        regression_detector = RegressionDetector()
         
         new(tree, config, memory_manager,
             nothing, nothing, nothing, nothing, batch_eval_manager,
-            stats, now(), device, false)
+            stats, now(), 
+            profiler, monitor, regression_detector,
+            device, false)
     end
 end
 
@@ -139,6 +161,9 @@ function start!(engine::MCTSGPUEngine)
     # Launch kernel asynchronously
     engine.kernel_task = @async begin
         CUDA.device!(engine.device) do
+            # Start profiling
+            start_timing!(engine.profiler, "kernel_launch")
+            
             kernel, state, queue, batch_buffer = launch_persistent_kernel!(
                 engine.tree, 
                 engine.config,
@@ -149,15 +174,45 @@ function start!(engine::MCTSGPUEngine)
             engine.work_queue = queue
             engine.batch_buffer = batch_buffer
             
+            # Calculate initial occupancy
+            occupancy = calculate_occupancy(
+                engine.profiler,
+                engine.config.block_size,
+                64,  # Estimated registers per thread
+                engine.config.shared_mem_size
+            )
+            
+            @info "MCTS Kernel launched" occupancy
+            
             # Process evaluation batches in parallel
             eval_task = @async begin
+                batch_count = 0
                 while engine.is_running
                     # Process pending batches with dummy evaluation
+                    start_timing!(engine.profiler, "batch_eval_$batch_count")
+                    
                     process_eval_batches!(engine.batch_eval_manager) do features, scores, batch_size
                         # Dummy evaluation - normally would call neural network
                         scores .= 0.5f0 .+ 0.5f0 .* CUDA.rand(Float32, batch_size)
                     end
                     
+                    duration = end_timing!(engine.profiler, "batch_eval_$batch_count")
+                    
+                    # Update realtime metrics
+                    if duration > 0
+                        throughput = batch_count > 0 ? Float32(batch_count) / (time() - Float64(engine.start_time)) : 0.0f0
+                        gpu_util = length(engine.profiler.kernel_occupancy) > 0 ? 
+                            engine.profiler.kernel_occupancy[end] * 100.0f0 : 0.0f0
+                        
+                        update_metrics!(
+                            engine.monitor,
+                            gpu_util,
+                            0.0f0,  # Bandwidth will be calculated separately
+                            throughput
+                        )
+                    end
+                    
+                    batch_count += 1
                     sleep(0.001)  # Small delay
                 end
             end
@@ -375,6 +430,59 @@ function get_statistics(engine::MCTSGPUEngine)
     end
     
     return stats_dict
+end
+
+"""
+Get performance profiling report
+"""
+function get_performance_report(engine::MCTSGPUEngine)
+    # Generate comprehensive report
+    report = generate_performance_report(engine.profiler, engine.monitor)
+    
+    # Add MCTS-specific metrics
+    mcts_metrics = get_statistics(engine)
+    report["mcts_metrics"] = mcts_metrics
+    
+    # Check for regressions
+    if !isempty(engine.profiler.kernel_durations)
+        avg_duration = mean(engine.profiler.kernel_durations)
+        check_regression!(engine.regression_detector, "kernel_duration", avg_duration)
+    end
+    
+    if engine.monitor.avg_gpu_util[] > 0
+        check_regression!(engine.regression_detector, "gpu_utilization", engine.monitor.avg_gpu_util[])
+    end
+    
+    # Add regression alerts
+    if !isempty(engine.regression_detector.alerts)
+        report["performance_alerts"] = engine.regression_detector.alerts
+    end
+    
+    return report
+end
+
+"""
+Export performance metrics to file
+"""
+function export_performance_metrics(
+    engine::MCTSGPUEngine,
+    filename::String = "mcts_performance_$(Dates.format(now(), "yyyymmdd_HHMMSS")).json"
+)
+    report = get_performance_report(engine)
+    
+    # Ensure directory exists
+    dir = dirname(filename)
+    if !isempty(dir) && !isdir(dir)
+        mkpath(dir)
+    end
+    
+    # Export using JSON3
+    open(filename, "w") do io
+        JSON3.pretty(io, report)  # Pretty print
+    end
+    
+    @info "Performance report exported to $filename"
+    return filename
 end
 
 end # module
