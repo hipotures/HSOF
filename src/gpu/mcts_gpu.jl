@@ -13,6 +13,7 @@ include("kernels/batch_evaluation.jl")
 include("kernels/warp_optimization.jl")
 include("kernels/persistent_kernel.jl")
 include("kernels/performance_profiling.jl")
+include("kernels/tree_statistics.jl")
 
 using .MCTSTypes
 using .MemoryPool
@@ -21,10 +22,12 @@ using .BatchEvaluation
 using .WarpOptimization
 using .PersistentKernel
 using .PerformanceProfiling
+using .TreeStatsAnalysis
 
 export MCTSGPUEngine, initialize!, start!, stop!, get_statistics
 export select_features, get_best_features, reset_tree!
 export get_performance_report, export_performance_metrics
+export collect_tree_stats, get_tree_summary
 
 """
 Main MCTS GPU Engine managing the persistent kernel and tree operations
@@ -50,6 +53,10 @@ mutable struct MCTSGPUEngine
     profiler::PerformanceProfiler
     monitor::RealtimeMonitor
     regression_detector::RegressionDetector
+    
+    # Tree statistics
+    stats_collector::TreeStatsCollector
+    last_stats_summary::Union{Nothing, TreeStatsSummary}
     
     # Device
     device::CuDevice
@@ -94,10 +101,14 @@ mutable struct MCTSGPUEngine
         monitor = RealtimeMonitor()
         regression_detector = RegressionDetector()
         
+        # Create tree statistics collector
+        stats_collector = TreeStatsCollector()
+        
         new(tree, config, memory_manager,
             nothing, nothing, nothing, nothing, batch_eval_manager,
             stats, now(), 
             profiler, monitor, regression_detector,
+            stats_collector, nothing,
             device, false)
     end
 end
@@ -281,10 +292,14 @@ function select_features(
     
     # Monitor progress
     last_update = time()
+    last_stats_update = time()
     update_interval = 1.0  # seconds
+    stats_interval = 5.0  # collect tree stats every 5 seconds
     
     while engine.is_running
         current_time = time()
+        
+        # Regular statistics update
         if current_time - last_update > update_interval
             update_statistics!(engine)
             progress = get_progress(engine)
@@ -292,6 +307,12 @@ function select_features(
             @info "MCTS Progress" progress iterations stats=engine.stats
             
             last_update = current_time
+        end
+        
+        # Tree statistics collection
+        if current_time - last_stats_update > stats_interval
+            collect_tree_stats!(engine)
+            last_stats_update = current_time
         end
         
         sleep(0.1)
@@ -443,6 +464,11 @@ function get_performance_report(engine::MCTSGPUEngine)
     mcts_metrics = get_statistics(engine)
     report["mcts_metrics"] = mcts_metrics
     
+    # Add tree statistics if available
+    if !isnothing(engine.last_stats_summary)
+        report["tree_statistics"] = TreeStatsAnalysis.generate_stats_report(engine.last_stats_summary)
+    end
+    
     # Check for regressions
     if !isempty(engine.profiler.kernel_durations)
         avg_duration = mean(engine.profiler.kernel_durations)
@@ -483,6 +509,31 @@ function export_performance_metrics(
     
     @info "Performance report exported to $filename"
     return filename
+end
+
+"""
+Collect tree statistics
+"""
+function collect_tree_stats!(engine::MCTSGPUEngine)
+    # Collect statistics from the tree
+    summary = collect_tree_statistics(engine.tree, engine.stats_collector)
+    engine.last_stats_summary = summary
+    
+    # Log statistics if verbose
+    @debug "Tree statistics collected" summary
+    
+    return summary
+end
+
+"""
+Get last collected tree statistics summary
+"""
+function get_tree_summary(engine::MCTSGPUEngine)
+    if isnothing(engine.last_stats_summary)
+        # Collect fresh statistics if none available
+        return collect_tree_stats!(engine)
+    end
+    return engine.last_stats_summary
 end
 
 end # module
