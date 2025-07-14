@@ -1,0 +1,97 @@
+# HSOF Data Configuration
+
+[database]
+# SQLite database settings
+connection_pool_size = 4
+read_only = true
+timeout_seconds = 30
+enable_wal_mode = true  # Write-Ahead Logging for better concurrency
+cache_size_mb = 100
+mmap_size_gb = 4  # Memory-mapped I/O size
+
+[database.tables]
+# Expected table structure
+features_table = "features"
+metadata_table = "dataset_metadata"
+results_table = "feature_selection_results"
+checkpoints_table = "mcts_checkpoints"
+
+[data_loading]
+# Data loading parameters
+chunk_size = 100000  # Rows per chunk
+prefetch_chunks = 2  # Number of chunks to prefetch
+enable_lazy_loading = true
+compression = "none"  # or "gzip", "lz4"
+dtype_backend = "numpy"  # or "arrow"
+
+[data_loading.validation]
+# Data validation settings
+check_missing_values = true
+check_infinite_values = true
+check_constant_features = true
+max_missing_ratio = 0.5  # Drop features with >50% missing
+imputation_strategy = "median"  # or "mean", "mode", "drop"
+
+[features]
+# Feature configuration
+max_features = 5000  # Maximum input features
+min_samples = 1000  # Minimum samples required
+id_columns = ["id", "ID", "index"]  # Common ID column names
+target_columns = ["target", "label", "y"]  # Common target names
+exclude_patterns = ["^tmp_", "^debug_"]  # Regex patterns to exclude
+
+[features.types]
+# Feature type handling
+categorical_threshold = 50  # Max unique values for categorical
+text_columns = []  # List of text feature columns
+datetime_columns = []  # List of datetime columns
+binary_encoding = "one_hot"  # or "label", "target"
+
+[streaming]
+# Data streaming for large datasets
+enable_streaming = true
+stream_buffer_size_mb = 512
+compression_level = 6  # 1-9, higher = more compression
+enable_parallel_streams = true
+num_stream_workers = 4
+
+[caching]
+# Caching configuration
+enable_disk_cache = true
+cache_directory = ".cache/data/"
+max_cache_size_gb = 10
+cache_eviction_policy = "lru"  # Least Recently Used
+enable_memory_cache = true
+memory_cache_size_mb = 1024
+
+[preprocessing]
+# Preprocessing settings
+scale_features = true
+scaling_method = "standard"  # or "minmax", "robust", "none"
+handle_outliers = true
+outlier_method = "iqr"  # or "zscore", "isolation_forest"
+outlier_threshold = 3.0
+
+[sampling]
+# Data sampling for large datasets
+enable_sampling = false  # Enable for datasets > 1M rows
+sampling_method = "stratified"  # or "random", "systematic"
+sample_size = 100000
+maintain_class_balance = true
+random_state = 42
+
+[output]
+# Output data configuration
+output_format = "parquet"  # or "csv", "feather", "sqlite"
+compression = "snappy"  # Parquet compression
+partition_by = []  # Columns to partition output by
+include_metadata = true
+timestamp_columns = true  # Add creation/modification times
+
+[monitoring]
+# Data quality monitoring
+track_feature_drift = true
+drift_detection_method = "psi"  # Population Stability Index
+drift_threshold = 0.2
+log_data_statistics = true
+statistics_sample_size = 10000

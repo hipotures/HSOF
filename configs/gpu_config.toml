@@ -1,0 +1,21 @@
+[memory]
+enable_peer_access = true
+enable_unified_memory = false
+async_malloc_threshold = 1048576
+pool_type = "binned"
+
+[kernel_launch]
+default_block_size = 256
+occupancy_target = 0.8
+max_threads_per_block = 1024
+default_grid_size = 0
+
+[cuda]
+allow_memory_growth = true
+device_preferences = [0, 1]
+math_mode = "FAST_MATH"
+enable_profiling = false
+stream_count = 4
+memory_pool_growth = 1073741824
+compute_capability_min = [8, 9]
+memory_limit_gb = 22

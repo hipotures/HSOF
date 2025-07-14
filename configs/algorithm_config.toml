@@ -1,0 +1,102 @@
+# HSOF Algorithm Configuration
+
+[mcts]
+# Monte Carlo Tree Search parameters
+max_iterations = 10000
+exploration_constant = 1.41421356  # sqrt(2)
+max_tree_depth = 20
+min_visits_expand = 10
+batch_size = 100
+ensemble_size = 100  # Number of trees in ensemble
+diversity_factor = 0.2  # Promotes exploration diversity
+
+[mcts.memory]
+# Memory settings for MCTS
+max_nodes = 1000000  # 1M nodes per tree
+node_pool_growth = 100000  # Grow by 100k nodes
+enable_node_recycling = true
+checkpoint_interval = 1000  # Save every 1000 iterations
+
+[filtering]
+# Stage 1 fast filtering parameters
+target_features = 500  # Reduce to 500 features
+mi_threshold = 0.1  # Minimum mutual information
+correlation_threshold = 0.95  # Remove features with correlation > 0.95
+variance_threshold = 0.001  # Remove low variance features
+enable_categorical = true  # Support categorical features
+
+[filtering.gpu]
+# GPU-specific filtering settings
+histogram_bins = 256
+block_size = 256
+use_shared_memory = true
+enable_kernel_fusion = true
+
+[metamodel]
+# Neural network metamodel configuration
+architecture = "attention"  # Type: "mlp", "attention", "transformer"
+hidden_layers = [256, 128, 64]
+dropout_rate = 0.2
+attention_heads = 8
+learning_rate = 0.001
+batch_size = 256
+update_interval = 100  # Update every 100 MCTS iterations
+
+[metamodel.training]
+# Training parameters
+epochs_per_update = 10
+early_stopping_patience = 5
+validation_split = 0.2
+use_fp16 = true  # Use half precision for inference
+gradient_clip_norm = 1.0
+
+[metamodel.replay]
+# Experience replay buffer
+buffer_size = 10000
+prioritized_sampling = true
+priority_alpha = 0.6
+priority_beta = 0.4
+min_samples_train = 1000
+
+[evaluation]
+# Stage 3 evaluation parameters
+models = ["xgboost", "random_forest", "lightgbm"]
+cv_folds = 5
+cv_strategy = "stratified"  # or "kfold"
+n_jobs = -1  # Use all CPU cores
+scoring_metric = "roc_auc"  # Primary metric
+secondary_metrics = ["accuracy", "f1", "precision", "recall"]
+
+[evaluation.hyperparameters]
+# Model hyperparameter ranges for optimization
+xgboost_max_depth = [3, 10]
+xgboost_learning_rate = [0.01, 0.3]
+xgboost_n_estimators = [100, 1000]
+rf_max_depth = [5, 20]
+rf_n_estimators = [100, 500]
+lightgbm_num_leaves = [31, 127]
+lightgbm_learning_rate = [0.01, 0.3]
+
+[pipeline]
+# Overall pipeline settings
+random_seed = 42
+enable_progress_bars = true
+log_level = "INFO"
+save_intermediate_results = true
+output_directory = "results/"
+checkpoint_directory = "checkpoints/"
+
+[pipeline.limits]
+# Resource limits
+max_runtime_hours = 24
+max_memory_gb = 48  # Total system memory limit
+gpu_memory_reserve_gb = 2  # Reserve per GPU
+cpu_threads = 32  # Max CPU threads to use
+
+[performance]
+# Performance optimization settings
+enable_nvtx_profiling = false
+enable_cuda_graphs = true
+use_tensor_cores = true
+optimize_memory_pool = true
+pcie_transfer_size_mb = 100  # Chunk size for GPU transfers

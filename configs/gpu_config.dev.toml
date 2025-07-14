@@ -1,0 +1,17 @@
+# Development environment GPU configuration overrides
+
+[cuda]
+# Development settings - more conservative memory usage
+memory_limit_gb = 10  # Lower limit for development
+enable_profiling = true  # Enable profiling in dev
+math_mode = "DEFAULT"  # Use default math for accuracy in dev
+
+[kernel_launch]
+# Smaller sizes for debugging
+default_block_size = 128
+occupancy_target = 0.5  # Lower target for easier debugging
+
+[memory]
+# Development memory settings
+enable_unified_memory = true  # Easier debugging with unified memory
+pool_type = "none"  # Disable pooling for memory debugging

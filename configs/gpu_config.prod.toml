@@ -1,0 +1,17 @@
+# Production environment GPU configuration overrides
+
+[cuda]
+# Production settings - maximize performance
+memory_limit_gb = 22  # Use most available memory
+enable_profiling = false  # Disable profiling in production
+math_mode = "FAST_MATH"  # Fast math for performance
+
+[kernel_launch]
+# Optimized for production
+default_block_size = 256
+occupancy_target = 0.8  # High occupancy target
+
+[memory]
+# Production memory settings
+enable_unified_memory = false  # Better performance
+pool_type = "binned"  # Efficient memory pooling
