@@ -1,0 +1,140 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+
+# Dependency directories
+node_modules/
+
+# Environment variables and sensitive files
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# API keys and secrets
+*api_key*
+*secret*
+*token*
+*password*
+*credential*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*_rsa
+*_rsa.pub
+*_dsa
+*_dsa.pub
+*.ppk
+.ssh/
+
+# AWS
+.aws/
+aws-exports.js
+
+# Google Cloud
+.gcloud/
+*-key.json
+service-account*.json
+
+# Azure
+.azure/
+*.publishsettings
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS specific
+.DS_Store
+
+# Task files (keep these in git for task tracking)
+# tasks.json
+# tasks/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Julia
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+deps/deps.jl
+docs/build/
+docs/site/
+Manifest.toml
+
+# CUDA/GPU
+*.cubin
+*.ptx
+*.fatbin
+*.gpu
+*.nvprof
+nsight-systems-*/
+
+# Machine Learning
+*.h5
+*.pkl
+*.pickle
+*.model
+*.weights
+checkpoint/
+checkpoints/
+models/
+*.ckpt
+*.pb
+
+# Data files
+*.db
+*.sqlite
+*.sqlite3
+data/
+datasets/
+*.csv
+*.parquet
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDE specific  
+.cursor/
+
+# MCP/Claude specific
+.claude/settings.json
+
+# Local development
+tmp/
+temp/
+cache/
+*.tmp 

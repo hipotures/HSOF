@@ -1,0 +1,1770 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Initialize Project Structure and Development Environment",
+        "description": "Set up the hybrid feature selection project repository with Julia/CUDA development environment, configure dual RTX 4090 GPU setup, and establish project structure for multi-stage feature selection pipeline",
+        "details": "Create project directory structure: src/stages/{stage1,stage2,stage3}, src/gpu/{kernels,memory}, src/metamodel, src/ui/console, src/database. Initialize Julia project with Project.toml including CUDA.jl v5.2+, Flux.jl, MLJ.jl, SQLite.jl, and Rich.jl dependencies. Configure CUDA environment for compute capability 7.0+ and CUDA 11.8+. Set up GPU device management for dual RTX 4090 configuration without NVLink. Create development configuration files for GPU memory pools, CUDA streams, and PCIe communication settings. Implement GPU detection and initialization module with fallback to single GPU mode.",
+        "testStrategy": "Verify Julia package installation and CUDA.jl functionality. Test GPU detection returns 2x RTX 4090 devices. Validate CUDA kernel compilation with simple vector addition test. Confirm memory allocation works on both GPUs independently. Test PCIe bandwidth between GPUs meets 8GB/s minimum requirement. Verify development environment setup with hello-world GPU kernel execution.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Project Directory Structure",
+            "description": "Set up comprehensive directory hierarchy for hybrid feature selection project with proper organization for Julia/CUDA components",
+            "dependencies": [],
+            "details": "Create base directories: src/stages/{stage1,stage2,stage3} for pipeline stages, src/gpu/{kernels,memory} for CUDA code, src/metamodel for neural network components, src/ui/console for interface, src/database for data layer, test/ for all tests, docs/ for documentation, benchmarks/ for performance tests, configs/ for configuration files. Set up .gitignore for Julia/CUDA artifacts. Initialize README.md with project overview.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Initialize Julia Environment and Package Management",
+            "description": "Configure Julia project with Project.toml, install required packages, and set up package environment for reproducibility",
+            "dependencies": [
+              1
+            ],
+            "details": "Initialize Julia project with 'julia --project=.' and create Project.toml. Add dependencies: CUDA.jl v5.2+, Flux.jl v0.14+, MLJ.jl v0.19+, SQLite.jl v1.6+, Rich.jl v0.3+, DataFrames.jl v1.6+, Statistics, LinearAlgebra, Random. Configure Manifest.toml for exact version pinning. Set up local package development environment. Create startup.jl for consistent environment loading.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Configure CUDA Environment and Validation",
+            "description": "Set up CUDA toolkit, configure Julia CUDA.jl bindings, and validate compute capability requirements for RTX 4090 GPUs",
+            "dependencies": [
+              2
+            ],
+            "details": "Verify CUDA 11.8+ installation and set CUDA_PATH environment variable. Configure CUDA.jl to use system CUDA installation. Validate compute capability 8.9 support for RTX 4090. Set up CUDA memory allocator with pool configuration. Configure CUDA streams for concurrent execution. Create cuda_config.jl with device preferences, memory limits, and stream counts. Test basic CUDA functionality with vector addition kernel.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Implement Dual GPU Setup Without NVLink",
+            "description": "Configure device management for two RTX 4090 GPUs operating independently via PCIe with proper workload distribution",
+            "dependencies": [
+              3
+            ],
+            "details": "Create GPUManager module to detect and initialize both RTX 4090 devices. Implement device context switching for independent GPU operations. Configure PCIe peer-to-peer access if available. Set up memory allocation strategies for 24GB VRAM per GPU. Implement workload distribution logic for parallel processing. Create synchronization mechanisms for multi-GPU coordination. Test PCIe bandwidth between GPUs (minimum 8GB/s required).",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Create Development Configuration Files",
+            "description": "Set up configuration system for GPU parameters, memory pools, algorithm settings, and runtime options",
+            "dependencies": [
+              1
+            ],
+            "details": "Create configs/gpu_config.toml with device IDs, memory limits, stream counts, kernel launch parameters. Implement configs/algorithm_config.toml for MCTS parameters, filtering thresholds, metamodel settings. Set up configs/data_config.toml for database paths, chunk sizes, feature limits. Create environment-specific configs (dev/prod). Implement configuration loader with validation and default fallbacks. Add runtime configuration override capabilities.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Build GPU Detection and Initialization Module",
+            "description": "Develop comprehensive GPU detection system with capability checking, memory querying, and initialization routines",
+            "dependencies": [
+              4,
+              5
+            ],
+            "details": "Create src/gpu/device_manager.jl with GPU enumeration and property queries. Implement capability checker ensuring compute 8.9+ support. Build memory query system reporting available VRAM, shared memory, L2 cache. Create initialization routines setting up contexts, streams, and memory pools. Implement device selection logic based on availability and load. Add error handling for GPU initialization failures. Create device info reporting for debugging.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Develop Basic GPU Kernel Testing Framework",
+            "description": "Create testing infrastructure for CUDA kernels with performance benchmarking and correctness validation",
+            "dependencies": [
+              6
+            ],
+            "details": "Implement test/gpu/kernel_tests.jl with basic kernel test cases (vector ops, reductions, memory patterns). Create benchmarking framework measuring kernel execution time, memory bandwidth, occupancy. Build correctness validation comparing GPU results with CPU reference implementations. Add memory leak detection and error checking. Implement performance regression tests. Create kernel profiling integration with NSight Compute. Set up CI-compatible GPU testing.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 8,
+            "title": "Set Up Documentation Infrastructure",
+            "description": "Initialize documentation system with API docs, architecture guides, and usage examples",
+            "dependencies": [
+              1
+            ],
+            "details": "Create docs/ structure with sections: getting-started/, api/, architecture/, tutorials/, benchmarks/. Set up Documenter.jl for automatic API documentation generation. Write initial architecture document explaining three-stage pipeline. Create GPU programming guide for CUDA kernel development. Add configuration reference documentation. Include example notebooks for common workflows. Set up documentation building automation.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 9,
+            "title": "Implement Project Build and Validation Scripts",
+            "description": "Create build system for compiling CUDA kernels, running tests, and validating environment setup",
+            "dependencies": [
+              7,
+              8
+            ],
+            "details": "Create Makefile or build.jl for CUDA kernel compilation with optimization flags. Implement validation script checking Julia packages, CUDA installation, GPU availability. Add pre-commit hooks for code formatting and basic tests. Create performance benchmark runner with result tracking. Set up environment validation reporting all system capabilities. Implement quick-start script for new developers.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 10,
+            "title": "Create Initial Project Integration Tests",
+            "description": "Develop end-to-end tests validating complete environment setup and basic component interactions",
+            "dependencies": [
+              9
+            ],
+            "details": "Create test/integration/setup_test.jl validating full environment configuration. Test Julia package loading and version compatibility. Verify both GPUs are detected and usable. Test basic CUDA kernel execution on each GPU. Validate configuration file loading and parsing. Test database connection capabilities (using test SQLite file). Verify memory allocation and deallocation. Create smoke test running minimal feature selection pipeline.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Implement SQLite Database Integration Layer",
+        "description": "Create database connection layer for existing SQLite feature databases with lazy loading, metadata reading, and efficient data streaming for large datasets (1K-1M samples, 500-5000 features)",
+        "details": "Implement SQLite connection pooling with read-only connections for dataset access. Create metadata parser to read dataset_metadata table and extract excluded_columns, id_columns, target_column information as JSON. Develop lazy loading mechanism with configurable chunk size (default 10K rows) for streaming large tables. Implement column validation to ensure feature columns exist and have correct types. Create data loader with progress tracking for tables >1GB. Build result writing module for mcts_results, mcts_checkpoints, and feature_importance tables with batch write strategy (every 1000 iterations). Implement checkpoint system writing every 5 minutes or 10K iterations with compressed tree state serialization. Add error handling for missing/corrupt data with detailed logging.",
+        "testStrategy": "Test connection to sample SQLite database with 5000 features. Verify metadata parsing correctly identifies excluded columns and target. Test lazy loading with 1M row dataset monitoring memory usage stays under 8GB. Validate chunk-based streaming maintains data integrity. Test checkpoint writing and recovery from saved state. Verify batch write performance meets <1% overhead requirement. Test error handling with corrupted database file.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create SQLite connection pool with read-only access",
+            "description": "Implement thread-safe connection pooling for SQLite databases with configurable pool size and timeout settings",
+            "dependencies": [],
+            "details": "Build connection pool manager with min/max connections (default 5-20), connection timeout (30s), and health checking. Implement read-only connection mode with PRAGMA query_only=1. Add connection recycling after 100 uses or 1 hour. Create connection acquisition/release with proper error handling and automatic retry logic. Include connection string validation and database file existence checks.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Develop metadata parser for dataset_metadata table",
+            "description": "Create parser to extract JSON metadata including excluded_columns, id_columns, and target_column from dataset_metadata table",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement metadata table reader with SQL query for dataset_metadata extraction. Parse JSON fields for excluded_columns (array), id_columns (array), target_column (string). Create metadata cache with TTL (5 minutes) to avoid repeated queries. Build validation for required metadata fields and type checking. Add support for metadata versioning and schema evolution.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Implement lazy loading with chunked streaming",
+            "description": "Build configurable chunk-based data streaming system for efficient memory usage with large datasets",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Create chunk iterator with configurable size (default 10K rows) and prefetch buffer. Implement cursor-based pagination using LIMIT/OFFSET with row ordering stability. Build memory-mapped streaming for datasets >100MB. Add chunk validation ensuring no data loss between chunks. Create adaptive chunk sizing based on available memory and row size estimation.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Build column validation and type checking system",
+            "description": "Develop comprehensive validation for feature columns existence, data types, and consistency across chunks",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Implement column existence validator against metadata specifications. Create type inference system supporting numeric, categorical, and datetime features. Build type consistency checker across chunks with coercion rules. Add missing value detection and configurable handling strategies. Implement feature statistics collection (min/max, unique counts) during validation.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Create progress tracking for large dataset loading",
+            "description": "Implement multi-level progress tracking with ETA estimation for datasets >1GB",
+            "dependencies": [
+              3
+            ],
+            "details": "Build progress tracker with row count estimation using SELECT COUNT(*) with timeout fallback. Implement callback-based progress reporting with percentage, rows processed, and ETA. Create memory usage monitor tracking RSS and chunk buffer utilization. Add throughput measurement in rows/second and MB/second. Build cancellation support with proper cleanup of partial loads.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Develop result writing module for MCTS outputs",
+            "description": "Create efficient batch writing system for MCTS results with transactional guarantees",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement batch insert writer with configurable batch size (default 1000 rows). Create result tables schema for selected features, scores, and iteration metadata. Build transaction management with rollback on failures. Add write-ahead logging for crash recovery. Implement asynchronous writing with queue-based buffering to avoid blocking MCTS iterations.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Implement checkpoint system with compression",
+            "description": "Build checkpoint persistence with compression for MCTS state and intermediate results",
+            "dependencies": [
+              6
+            ],
+            "details": "Create checkpoint writer supporting zlib compression (level 6 default) for space efficiency. Implement incremental checkpointing storing only deltas since last checkpoint. Build checkpoint reader with version compatibility and migration support. Add checkpoint metadata including timestamp, iteration count, and feature selection state. Create retention policy with configurable checkpoint history (keep last 10).",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 8,
+            "title": "Build integration testing and benchmark suite",
+            "description": "Develop comprehensive test suite validating all database operations and performance benchmarks",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "details": "Create integration tests with sample SQLite databases (100MB, 1GB, 10GB sizes). Implement performance benchmarks measuring throughput for different chunk sizes. Build memory leak detection tests using valgrind/AddressSanitizer. Add concurrent access tests simulating multi-threaded usage. Create regression test suite validating backward compatibility with existing databases.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Build Stage 1 Fast Filtering Module",
+        "description": "Implement GPU-accelerated univariate filtering stage to reduce features from 5000 to 500 using mutual information, correlation filtering, and variance thresholding within 30 seconds",
+        "details": "Implement GPU kernel for mutual information calculation using histogram-based estimation with 256 bins. Create correlation matrix computation kernel using cuBLAS for efficient matrix multiplication. Develop variance calculation kernel with parallel reduction for each feature. Build feature ranking system combining MI scores, correlation thresholds, and variance filters. Implement configurable thresholds: MI threshold (default 0.01), correlation threshold (default 0.95), variance threshold (default 0.01). Create GPU memory layout optimized for coalesced access with features in column-major format. Add support for categorical features with one-hot encoding on GPU. Implement progress tracking with feature reduction counter.",
+        "testStrategy": "Test MI calculation accuracy against sklearn.feature_selection.mutual_info_classif reference implementation. Verify correlation filtering removes highly correlated features (>0.95). Test variance thresholding eliminates near-constant features. Validate 5000→500 feature reduction completes in <30 seconds on RTX 4090. Test memory usage stays within 8GB VRAM for 1M samples. Verify feature ranking stability across multiple runs.",
+        "priority": "high",
+        "dependencies": [
+          1,
+          2
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design GPU memory layout for feature data",
+            "description": "Create optimal memory layout for coalesced access patterns with feature data organized in column-major format for GPU processing",
+            "dependencies": [],
+            "details": "Design memory layout with features stored contiguously in GPU global memory using column-major format for coalesced access. Implement padding strategy to align features to 128-byte boundaries. Create shared memory tiling scheme for 32x32 feature blocks. Design texture memory usage for frequently accessed correlation matrix data. Plan constant memory allocation for threshold parameters and histogram bins.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Implement mutual information GPU kernel",
+            "description": "Build CUDA kernel for histogram-based mutual information calculation using 256 bins with shared memory optimization",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement histogram estimation kernel using atomic operations in shared memory for 256 bins per feature. Create parallel reduction for probability calculation with warp-level primitives. Build MI calculation using log2 operations optimized for GPU. Implement feature-parallel processing with one thread block per feature pair. Add shared memory caching for histogram bins to reduce global memory traffic.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Develop correlation matrix computation with cuBLAS",
+            "description": "Create GPU-accelerated correlation matrix calculation using cuBLAS SGEMM operations for efficient matrix multiplication",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement feature standardization kernel computing mean and standard deviation in single pass. Create cuBLAS-based matrix multiplication for X^T * X computation. Build correlation coefficient calculation from covariance matrix. Optimize for symmetric matrix properties storing only upper triangle. Implement batched processing for datasets exceeding GPU memory.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Build variance calculation kernel",
+            "description": "Implement parallel reduction kernel for computing feature variance with numerical stability",
+            "dependencies": [
+              1
+            ],
+            "details": "Create two-pass algorithm for numerically stable variance calculation using Welford's method. Implement warp-level reduction primitives for efficient parallel summation. Build shared memory optimization for partial sums within thread blocks. Add support for online variance updates during streaming. Implement FP32 accumulation to maintain precision with large sample counts.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Create feature ranking system",
+            "description": "Design integrated ranking system combining MI scores, correlation filtering, and variance thresholds for feature selection",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "Implement priority queue on GPU for maintaining top-K features by MI score. Create correlation graph structure for identifying redundant feature groups. Build variance-based pre-filtering to eliminate constant features. Design configurable weighting system for combining multiple criteria. Implement efficient sorting using CUB radix sort for final ranking.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Implement configurable threshold management",
+            "description": "Build flexible threshold configuration system with runtime adjustment and validation capabilities",
+            "dependencies": [],
+            "details": "Create threshold configuration structure with MI threshold (0.01), correlation threshold (0.95), and variance threshold (1e-6) defaults. Implement runtime threshold adjustment without kernel recompilation. Build validation system ensuring thresholds produce desired feature count. Add adaptive threshold adjustment when exact 500 features needed. Create threshold persistence for reproducibility.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Add categorical feature GPU support",
+            "description": "Implement GPU-accelerated one-hot encoding and categorical feature handling for mixed data types",
+            "dependencies": [
+              1
+            ],
+            "details": "Create sparse matrix representation for one-hot encoded features on GPU. Implement efficient categorical-to-numerical conversion kernel. Build memory-efficient encoding for high-cardinality features. Add support for ordinal encoding with configurable mapping. Optimize memory layout for mixed numerical/categorical processing.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 8,
+            "title": "Optimize memory access patterns",
+            "description": "Fine-tune GPU kernels for coalesced memory access and minimize global memory bandwidth usage",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "Profile memory access patterns using NVIDIA Nsight Compute for all kernels. Implement memory coalescing optimizations ensuring 128-byte aligned accesses. Add L2 cache hints for frequently accessed data structures. Optimize shared memory bank conflict resolution. Implement memory prefetching for sequential access patterns.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 9,
+            "title": "Build progress tracking system",
+            "description": "Create real-time progress monitoring for GPU computations with minimal overhead",
+            "dependencies": [
+              5
+            ],
+            "details": "Implement atomic counter system for tracking processed features without synchronization. Create progress callback mechanism using CUDA events every 100ms. Build ETA calculation based on current throughput and remaining work. Add memory usage monitoring for GPU allocation tracking. Implement progress persistence for resumable operations.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 10,
+            "title": "Validate against sklearn reference",
+            "description": "Implement comprehensive accuracy validation comparing GPU results with sklearn.feature_selection reference implementation",
+            "dependencies": [
+              2,
+              3,
+              4,
+              5
+            ],
+            "details": "Create test harness comparing MI scores with sklearn.feature_selection.mutual_info_classif within 1% tolerance. Implement correlation matrix validation against numpy.corrcoef results. Build variance calculation tests with numerical precision checks. Add end-to-end feature selection validation on standard datasets. Create performance regression tests ensuring <30 second target.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 11,
+            "title": "Implement GPU kernel fusion",
+            "description": "Combine multiple operations into fused kernels to reduce memory bandwidth and kernel launch overhead",
+            "dependencies": [
+              8,
+              10
+            ],
+            "details": "Fuse standardization and correlation computation into single kernel pass. Combine MI histogram generation with probability calculation. Merge variance calculation with threshold filtering. Implement kernel fusion for feature ranking pipeline. Profile fused kernels ensuring 20% performance improvement over separate launches.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 12,
+            "title": "Create integration tests and benchmarks",
+            "description": "Build comprehensive test suite validating correctness and performance across different dataset sizes",
+            "dependencies": [
+              11
+            ],
+            "details": "Implement unit tests for each GPU kernel with edge cases (empty features, constant values). Create integration tests processing 1K, 10K, 100K, and 1M samples with 5000 features. Build performance benchmarks tracking throughput and memory usage. Add stress tests for maximum GPU memory utilization. Implement automated performance regression detection with 5% tolerance.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 13,
+            "title": "Design GPU memory layout for feature data",
+            "description": "Design optimal GPU memory structures for storing feature data with coalesced memory access patterns and efficient histogram computation",
+            "dependencies": [],
+            "details": "Define CUDA memory structures for feature matrices (column-major for coalesced access), histogram bins (256 bins per feature), and temporary buffers. Design data layout supporting both continuous and categorical features. Plan memory allocation strategy to minimize fragmentation and maximize GPU occupancy. Create structures for efficient parallel reduction operations.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 14,
+            "title": "Implement mutual information GPU kernel",
+            "description": "Develop CUDA kernel for parallel mutual information calculation using histogram-based estimation with 256 bins",
+            "dependencies": [
+              13
+            ],
+            "details": "Implement parallel histogram computation kernel with atomic operations for bin updates. Create entropy calculation using parallel reduction. Develop joint histogram computation for feature-target pairs. Implement MI score calculation: MI(X,Y) = H(X) + H(Y) - H(X,Y). Optimize kernel launch parameters for different GPU architectures (RTX 4090).",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 15,
+            "title": "Create cuBLAS correlation matrix computation",
+            "description": "Implement GPU-accelerated correlation matrix calculation using cuBLAS GEMM operations",
+            "dependencies": [
+              13
+            ],
+            "details": "Set up cuBLAS context and handle management. Implement feature standardization kernel (zero mean, unit variance). Use cublasSgemm for matrix multiplication (X^T * X). Create correlation coefficient normalization kernel. Implement symmetric matrix optimization storing only upper triangle.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 16,
+            "title": "Develop variance calculation kernel",
+            "description": "Build CUDA kernel for parallel variance computation with efficient reduction operations",
+            "dependencies": [
+              13
+            ],
+            "details": "Implement Welford's online algorithm for numerical stability. Create parallel reduction kernel using warp shuffle operations. Develop multi-stage reduction for large feature vectors. Optimize shared memory usage and block dimensions. Handle edge cases for constant features.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 17,
+            "title": "Build feature ranking system",
+            "description": "Create comprehensive feature scoring system combining MI scores, correlation filtering, and variance thresholds",
+            "dependencies": [
+              14,
+              15,
+              16
+            ],
+            "details": "Design composite scoring formula weighting MI, correlation penalty, and variance. Implement GPU kernel for score calculation and ranking. Create efficient sorting algorithm (radix sort or bitonic sort) for GPU. Develop feature selection logic applying configurable thresholds. Build index mapping for selected features.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 18,
+            "title": "Implement threshold management system",
+            "description": "Create configurable threshold system for MI, correlation, and variance with runtime adjustment capabilities",
+            "dependencies": [
+              17
+            ],
+            "details": "Design threshold configuration structure with defaults (MI: 0.01, correlation: 0.95, variance: 1e-6). Implement adaptive threshold adjustment based on feature distribution. Create validation logic ensuring minimum feature count (500). Build threshold persistence and loading mechanism. Develop runtime threshold tuning interface.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 19,
+            "title": "Optimize memory access patterns",
+            "description": "Enhance GPU kernels for coalesced memory access and maximum bandwidth utilization",
+            "dependencies": [
+              14,
+              15,
+              16
+            ],
+            "details": "Profile memory access patterns using NVIDIA Nsight. Implement texture memory for read-only feature data. Use shared memory for frequently accessed histogram bins. Apply memory padding for alignment. Optimize global memory transactions with vectorized loads (float4). Minimize bank conflicts in shared memory.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 20,
+            "title": "Add categorical feature GPU support",
+            "description": "Implement GPU-accelerated one-hot encoding and categorical feature handling",
+            "dependencies": [
+              13
+            ],
+            "details": "Create GPU kernel for one-hot encoding with dynamic memory allocation. Implement sparse matrix representation for encoded features. Develop categorical MI calculation handling discrete distributions. Build memory-efficient encoding for high-cardinality features. Create mapping tables for category-to-index conversion.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 21,
+            "title": "Implement progress tracking system",
+            "description": "Create real-time progress monitoring for GPU filtering operations with minimal overhead",
+            "dependencies": [
+              14,
+              15,
+              16
+            ],
+            "details": "Design atomic counter system for kernel progress updates. Implement CPU-GPU synchronization for progress reporting. Create progress callbacks with configurable update frequency. Build time estimation based on processed features. Develop cancellation mechanism for long-running operations.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 22,
+            "title": "Create sklearn validation framework",
+            "description": "Build comprehensive testing framework comparing GPU results against sklearn reference implementations",
+            "dependencies": [
+              14,
+              15,
+              16
+            ],
+            "details": "Implement sklearn mutual_info_classif wrapper for comparison. Create correlation matrix validation against numpy.corrcoef. Build variance comparison tests with numerical tolerance. Develop automated accuracy metrics (MSE, correlation) for result validation. Create performance benchmarking suite.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 23,
+            "title": "Optimize kernel launch configurations",
+            "description": "Fine-tune CUDA kernel launch parameters for RTX 4090 architecture maximizing occupancy",
+            "dependencies": [
+              14,
+              15,
+              16
+            ],
+            "details": "Profile kernel occupancy using CUDA occupancy calculator. Optimize block dimensions for different feature counts. Implement dynamic parallelism for adaptive workloads. Tune shared memory configuration (L1 cache vs shared). Create architecture-specific optimizations for SM 8.9.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 24,
+            "title": "Build batch processing pipeline",
+            "description": "Create efficient batch processing system for handling 1M samples within memory constraints",
+            "dependencies": [
+              14,
+              15,
+              16,
+              20
+            ],
+            "details": "Design streaming architecture processing data in 100K sample batches. Implement online statistics updating for correlation and variance. Create batch aggregation for mutual information scores. Build memory pool management for batch buffers. Develop overlap computation with data transfer.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 25,
+            "title": "Implement error handling and recovery",
+            "description": "Create robust error detection and recovery mechanisms for GPU operations",
+            "dependencies": [
+              14,
+              15,
+              16
+            ],
+            "details": "Implement CUDA error checking macros for all API calls. Create GPU memory allocation failure recovery. Build numerical stability checks for variance/correlation. Develop fallback CPU implementation for debugging. Create detailed error logging with kernel failure context.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 26,
+            "title": "Create performance profiling tools",
+            "description": "Build comprehensive profiling system for identifying bottlenecks and optimization opportunities",
+            "dependencies": [
+              22,
+              23,
+              24
+            ],
+            "details": "Implement CUDA event timing for kernel execution. Create memory bandwidth utilization tracking. Build kernel efficiency metrics (FLOPS, memory throughput). Develop bottleneck identification system. Create performance regression testing framework.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 27,
+            "title": "Perform integration testing",
+            "description": "Execute comprehensive integration tests ensuring 30-second performance target with accuracy validation",
+            "dependencies": [
+              22,
+              24,
+              25,
+              26
+            ],
+            "details": "Test end-to-end pipeline with 5000→500 feature reduction. Validate 30-second performance on 1M samples dataset. Compare results against sklearn baseline ensuring <1% deviation. Test memory usage stays within 24GB GPU memory. Verify all edge cases (constant features, perfect correlations).",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Develop GPU-Native MCTS Engine Core",
+        "description": "Create persistent CUDA kernel MCTS implementation with Structure of Arrays memory layout, lock-free parallel tree operations, and warp-level primitives achieving >80% GPU utilization",
+        "details": "Design MCTS tree node structure using SoA layout: separate arrays for node_ids, parent_ids, visit_counts, scores, feature_masks. Implement persistent kernel using grid-stride loops to avoid kernel launch overhead. Create lock-free node expansion using atomic operations (atomicCAS for node allocation). Implement UCB1 selection using warp-level primitives (__shfl_down_sync for reductions). Build parallel tree traversal with warp divergence minimization. Create memory pool allocator for dynamic node allocation with 1M node capacity. Implement tree synchronization barriers using __syncthreads() and grid synchronization. Add node recycling for expired branches to prevent memory exhaustion. Design batch node evaluation for 1000+ nodes in parallel.",
+        "testStrategy": "Test persistent kernel runs 1000+ iterations without CPU intervention. Verify atomic operations maintain tree consistency under high contention. Test warp efficiency >90% using NSight Compute profiler. Validate memory pool handles 1M nodes without fragmentation. Test parallel traversal correctness with known MCTS problems. Verify >80% GPU utilization during exploration phase. Test scalability to 100 parallel trees.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design SoA tree node structure and memory layout",
+            "description": "Create Structure of Arrays layout for MCTS nodes with separate arrays for node_ids, parent_ids, visit_counts, scores, and feature_masks optimized for coalesced memory access",
+            "dependencies": [],
+            "details": "Define CUDA-aligned structures for node components. Create separate device arrays for each field to maximize memory bandwidth. Design feature_mask representation using bitfields for 5000 features. Implement node index management system. Calculate memory alignment for optimal GPU cache utilization.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Implement persistent kernel architecture with grid-stride loops",
+            "description": "Build persistent CUDA kernel framework using grid-stride loops to eliminate kernel launch overhead and maintain continuous GPU execution",
+            "dependencies": [
+              1
+            ],
+            "details": "Create kernel entry point with infinite loop controlled by device flag. Implement grid-stride pattern for work distribution across thread blocks. Design kernel state management for tree operations. Add graceful shutdown mechanism. Configure optimal block/grid dimensions for RTX 4090.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Develop lock-free node expansion with atomic operations",
+            "description": "Implement thread-safe node allocation and expansion using atomicCAS operations for concurrent tree growth without locks",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Create atomic node allocator using atomicAdd for pool index management. Implement atomicCAS-based node linking for parent-child relationships. Design collision resolution for simultaneous expansions. Add memory ordering guarantees with __threadfence(). Build rollback mechanism for failed allocations.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Implement UCB1 selection using warp primitives",
+            "description": "Build Upper Confidence Bound selection algorithm leveraging warp-level primitives for efficient parallel reduction and selection",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Implement warp-wide UCB1 calculation using __shfl_down_sync for score aggregation. Create ballot operations for node availability checking. Design warp-level max reduction for best child selection. Optimize exploration constant handling. Add warp synchronization points.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Build parallel tree traversal optimization",
+            "description": "Create efficient parallel traversal system minimizing warp divergence through careful work scheduling and path compression",
+            "dependencies": [
+              1,
+              2,
+              4
+            ],
+            "details": "Design warp-cooperative traversal where threads in warp follow similar paths. Implement path compression to reduce traversal depth. Create work queue system for balanced distribution. Add traversal caching for frequently visited paths. Build branch prediction hints for GPU scheduler.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Create memory pool allocator for 1M nodes",
+            "description": "Develop high-performance memory pool supporting allocation of 1 million MCTS nodes with minimal fragmentation",
+            "dependencies": [
+              1
+            ],
+            "details": "Pre-allocate contiguous device memory for 1M nodes across all arrays. Implement free list management using atomic operations. Design compaction algorithm for fragmentation handling. Create memory usage monitoring. Build overflow handling with graceful degradation.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Implement tree synchronization barriers and grid sync",
+            "description": "Build synchronization mechanisms for coordinating tree operations across thread blocks and ensuring consistency",
+            "dependencies": [
+              2,
+              3,
+              5
+            ],
+            "details": "Create cooperative group synchronization for tree-wide operations. Implement barrier system using atomic counters. Design phase-based synchronization for selection/expansion/backup. Add grid-wide synchronization points. Build deadlock detection and recovery.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 8,
+            "title": "Develop node recycling system",
+            "description": "Create efficient node recycling mechanism to reuse memory from pruned or completed tree branches",
+            "dependencies": [
+              6
+            ],
+            "details": "Implement garbage collection for unreachable nodes. Create reference counting system using atomics. Design batch recycling to minimize overhead. Add memory defragmentation during idle periods. Build statistics tracking for recycling efficiency.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 9,
+            "title": "Build batch node evaluation framework",
+            "description": "Implement batched evaluation system for processing multiple leaf nodes simultaneously to maximize GPU throughput",
+            "dependencies": [
+              3,
+              5
+            ],
+            "details": "Create batch collection mechanism for unevaluated leaf nodes. Design coalesced evaluation dispatch. Implement result scatter-back to tree nodes. Add dynamic batch sizing based on GPU occupancy. Build evaluation pipeline with double buffering.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 10,
+            "title": "Optimize warp divergence minimization strategies",
+            "description": "Implement techniques to reduce warp divergence and maintain high SIMD efficiency during tree operations",
+            "dependencies": [
+              4,
+              5,
+              7
+            ],
+            "details": "Profile divergence patterns using NSight Compute. Implement warp-aware work distribution. Create node sorting for coherent access patterns. Design predicated execution for divergent paths. Add warp specialization for different tree depths.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 11,
+            "title": "Integrate performance profiling framework",
+            "description": "Build comprehensive profiling system to measure and optimize GPU utilization, memory bandwidth, and kernel efficiency",
+            "dependencies": [
+              2,
+              9,
+              10
+            ],
+            "details": "Integrate CUPTI for hardware counter collection. Implement kernel timing with CUDA events. Create memory bandwidth monitoring. Add occupancy tracking and analysis. Build automated performance regression detection.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 12,
+            "title": "Develop unit testing framework for tree operations",
+            "description": "Create comprehensive testing suite validating correctness of parallel tree operations and memory management",
+            "dependencies": [
+              3,
+              4,
+              6,
+              8
+            ],
+            "details": "Build CUDA unit test framework with googletest integration. Create stress tests for concurrent operations. Implement consistency checks for tree invariants. Add memory leak detection. Design performance benchmarks with baseline comparisons.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 13,
+            "title": "Implement feature mask operations",
+            "description": "Create efficient bitfield operations for managing 5000-feature masks within MCTS nodes",
+            "dependencies": [
+              1
+            ],
+            "details": "Design compact bitfield representation using uint64_t arrays. Implement atomic bit manipulation functions. Create fast population count using __popc(). Build mask intersection/union operations. Optimize for coalesced access patterns.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 14,
+            "title": "Build tree statistics collection",
+            "description": "Develop real-time statistics gathering for tree depth, branching factor, and node distribution",
+            "dependencies": [
+              5,
+              7
+            ],
+            "details": "Implement atomic counters for tree metrics. Create histogram generation for node depths. Build branching factor analysis. Add visit count distribution tracking. Design efficient reduction kernels for statistics.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 15,
+            "title": "Create backup propagation system",
+            "description": "Implement efficient value backup mechanism propagating scores from leaves to root using parallel reduction",
+            "dependencies": [
+              4,
+              7
+            ],
+            "details": "Design lock-free backup using atomic operations. Implement path compression for backup efficiency. Create batch backup processing. Add virtual loss for selection consistency. Build convergence detection mechanisms.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 16,
+            "title": "Develop kernel state management",
+            "description": "Build robust state management system for persistent kernel execution including checkpointing and recovery",
+            "dependencies": [
+              2,
+              7
+            ],
+            "details": "Create kernel state structure in constant memory. Implement state transition logic. Design checkpoint mechanism for fault tolerance. Add state validation and error handling. Build state restoration from checkpoints.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 17,
+            "title": "Implement multi-GPU tree coordination",
+            "description": "Create coordination layer for distributing MCTS across dual RTX 4090 GPUs with efficient synchronization",
+            "dependencies": [
+              7,
+              15
+            ],
+            "details": "Design tree partitioning strategy across GPUs. Implement peer-to-peer communication for node sharing. Create cross-GPU synchronization barriers. Add load balancing mechanisms. Build unified tree view abstraction.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 18,
+            "title": "Build metamodel evaluation integration",
+            "description": "Create interface for integrating neural network metamodel evaluation within MCTS expansion phase",
+            "dependencies": [
+              9
+            ],
+            "details": "Design asynchronous evaluation pipeline. Implement tensor preparation for batch inference. Create result caching mechanism. Add evaluation queue management. Build fallback for metamodel failures.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 19,
+            "title": "Optimize memory access patterns",
+            "description": "Fine-tune memory access patterns for maximum bandwidth utilization on RTX 4090 architecture",
+            "dependencies": [
+              10,
+              11
+            ],
+            "details": "Profile memory access with NSight Compute. Implement memory coalescing optimizations. Create texture memory usage for read-only data. Add shared memory caching for hot nodes. Design memory prefetching strategies.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 20,
+            "title": "Create performance monitoring dashboard",
+            "description": "Build real-time monitoring interface displaying GPU utilization, tree statistics, and performance metrics",
+            "dependencies": [
+              11,
+              14
+            ],
+            "details": "Implement CUDA callback for metric collection. Create ring buffer for performance history. Design metric aggregation system. Add alert thresholds for performance degradation. Build JSON export for offline analysis.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Create Metamodel Training and Inference System",
+        "description": "Build neural network metamodel to predict cross-validation scores achieving 1000x speedup over actual model training with >0.9 correlation accuracy using attention mechanisms for feature interactions",
+        "details": "Implement metamodel architecture in Flux.jl: Input(500) → Dense(256,relu) → Dropout(0.2) → MultiHeadAttention(8 heads) → Dense(128,relu) → Dropout(0.2) → Dense(64,relu) → Dense(1,sigmoid). Create pre-training pipeline generating 10K random feature combinations with real XGBoost/RF scores. Implement experience replay buffer storing last 1000 evaluations with prioritized sampling. Build online learning system updating weights every 100 MCTS iterations without stopping GPU kernel. Optimize for FP16 computation using Tensor Cores on RTX 4090. Implement batch inference for 1000+ feature combinations in parallel. Create model checkpointing every 1000 iterations. Add correlation tracking between predicted and actual scores.",
+        "testStrategy": "Test pre-training achieves >0.9 correlation on held-out feature combinations. Verify batch inference processes 1000 combinations in <1ms. Test online learning maintains accuracy during MCTS exploration. Validate FP16 inference matches FP32 accuracy within 0.01. Test memory usage for model and replay buffer <2GB. Verify model updates don't interrupt MCTS kernel execution.",
+        "priority": "high",
+        "dependencies": [
+          1,
+          4
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design Neural Network Architecture in Flux.jl",
+            "description": "Implement the core metamodel architecture with attention mechanism: Input(500) → Dense(256,relu) → Dropout(0.2) → MultiHeadAttention(8 heads) → Dense(128,relu) → Dropout(0.2) → Dense(64,relu) → Dense(1,sigmoid)",
+            "dependencies": [],
+            "details": "Create modular Flux.jl model with custom MultiHeadAttention layer supporting 8 attention heads. Implement weight initialization using Glorot uniform. Add dropout layers for regularization. Ensure architecture supports both FP32 training and FP16 inference modes. Design input layer to handle variable feature dimensions up to 500.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Build Pre-training Data Generation Pipeline",
+            "description": "Create pipeline generating 10K random feature combinations with actual XGBoost/RandomForest cross-validation scores for initial metamodel training",
+            "dependencies": [],
+            "details": "Implement parallel data generation using multiple CPU cores. Generate diverse feature combinations using stratified sampling. Train lightweight XGBoost/RF models to obtain ground truth CV scores. Store results in efficient HDF5 format with feature indices and scores. Include data augmentation techniques for better coverage of feature space.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Implement Experience Replay Buffer",
+            "description": "Create GPU-accelerated circular buffer storing last 1000 MCTS evaluations with prioritized sampling based on prediction error",
+            "dependencies": [],
+            "details": "Design CUDA-compatible buffer structure with feature combinations and scores. Implement TD-error based priority calculation for sampling. Create efficient GPU kernels for buffer insertion and sampling. Add memory pooling to avoid allocation overhead. Support concurrent read/write operations during MCTS exploration.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Develop Online Learning System",
+            "description": "Build asynchronous weight update mechanism that trains metamodel every 100 MCTS iterations without interrupting GPU kernel execution",
+            "dependencies": [
+              1,
+              3
+            ],
+            "details": "Implement double-buffering for model weights to enable concurrent inference and training. Create CUDA streams for overlapping computation. Design mini-batch sampling from replay buffer. Implement gradient accumulation for stable updates. Add learning rate scheduling based on prediction accuracy trends.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Optimize FP16 Inference for Tensor Cores",
+            "description": "Convert trained model to FP16 precision and optimize matrix operations for RTX 4090 Tensor Cores achieving maximum throughput",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement mixed-precision training with FP16 compute and FP32 accumulation. Create custom CUDA kernels utilizing Tensor Core WMMA operations. Add dynamic loss scaling to prevent underflow. Optimize memory layout for coalesced access patterns. Validate accuracy degradation stays within 0.01 threshold.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Create Batch Inference System",
+            "description": "Design high-throughput inference pipeline processing 1000+ feature combinations in under 1ms using batched GPU operations",
+            "dependencies": [
+              1,
+              5
+            ],
+            "details": "Implement efficient batch assembly from MCTS node requests. Create fused CUDA kernels combining multiple layer operations. Use persistent kernels to minimize launch overhead. Implement output caching for repeated feature combinations. Add profiling hooks to measure per-batch latency.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Build Model Checkpointing Mechanism",
+            "description": "Implement automatic model state saving including weights, optimizer state, and replay buffer contents for fault tolerance",
+            "dependencies": [
+              1,
+              3,
+              4
+            ],
+            "details": "Create asynchronous checkpointing using separate CUDA stream. Implement incremental saves storing only changed weights. Add versioning system with rollback capability. Store metadata including training iteration and accuracy metrics. Design checkpoint compression to reduce I/O overhead.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 8,
+            "title": "Develop Correlation Tracking System",
+            "description": "Create real-time monitoring of metamodel prediction accuracy against actual XGBoost/RF scores with statistical validation",
+            "dependencies": [
+              1,
+              6
+            ],
+            "details": "Implement sliding window correlation calculation on GPU. Add Kendall's tau and Spearman correlation metrics. Create anomaly detection for accuracy degradation. Build visualization dashboard showing correlation trends. Add automated retraining triggers when correlation drops below 0.9.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 9,
+            "title": "Implement GPU Memory Management",
+            "description": "Design unified memory allocation system managing model weights, replay buffer, and inference batches within 24GB VRAM budget",
+            "dependencies": [
+              3,
+              5,
+              6
+            ],
+            "details": "Create memory pool allocators with pre-allocated chunks. Implement defragmentation for long-running sessions. Add memory pressure monitoring and adaptive batch sizing. Design fallback to system RAM for overflow scenarios. Include profiling tools for memory usage analysis.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 10,
+            "title": "Build MCTS Integration Interface",
+            "description": "Create seamless API for MCTS to query metamodel predictions without GPU kernel interruption maintaining sub-millisecond latency",
+            "dependencies": [
+              4,
+              6,
+              9
+            ],
+            "details": "Design zero-copy interface for feature combination submission. Implement request queuing with priority scheduling. Create callback mechanism for asynchronous result delivery. Add batching logic to combine multiple MCTS queries. Include performance counters for integration monitoring.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 11,
+            "title": "Develop Attention Mechanism Visualization",
+            "description": "Create tools to interpret and visualize attention weights showing which feature interactions the metamodel considers important",
+            "dependencies": [
+              1,
+              8
+            ],
+            "details": "Extract attention matrices from all 8 heads during inference. Implement GPU-accelerated attention score aggregation. Create heatmap generation for feature interaction visualization. Add export functionality for offline analysis. Build integration with console UI for real-time display.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 12,
+            "title": "Implement Distributed Training Support",
+            "description": "Add multi-GPU training capabilities for metamodel using data parallelism across dual RTX 4090 setup",
+            "dependencies": [
+              1,
+              2,
+              4
+            ],
+            "details": "Implement gradient synchronization using NCCL without NVLink. Create data sharding strategy for replay buffer. Add load balancing for uneven batch sizes. Design fault-tolerant training with single GPU fallback. Include bandwidth optimization for PCIe communication.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 13,
+            "title": "Build Performance Profiling Framework",
+            "description": "Create comprehensive profiling system measuring inference latency, training throughput, and identifying optimization opportunities",
+            "dependencies": [
+              6,
+              10,
+              11
+            ],
+            "details": "Integrate NVIDIA Nsight Systems markers throughout pipeline. Add custom CUDA event timers for kernel profiling. Create automated performance regression tests. Build reporting dashboard with bottleneck analysis. Include memory bandwidth utilization metrics.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 14,
+            "title": "Develop Hyperparameter Optimization System",
+            "description": "Implement automated tuning for learning rate, batch size, replay buffer sampling, and network architecture parameters",
+            "dependencies": [
+              1,
+              2,
+              4,
+              8
+            ],
+            "details": "Create Bayesian optimization framework for hyperparameter search. Implement parallel evaluation on both GPUs. Add early stopping based on correlation metrics. Design experiment tracking with MLflow integration. Include automated architecture search for layer sizes.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 15,
+            "title": "Create Comprehensive Testing Suite",
+            "description": "Build end-to-end tests validating 1000x speedup, >0.9 correlation accuracy, and seamless MCTS integration",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14
+            ],
+            "details": "Implement unit tests for each neural network layer. Create integration tests with mock MCTS system. Add stress tests for 10-hour continuous operation. Build accuracy validation on standard ML datasets. Include performance benchmarks comparing against direct XGBoost/RF evaluation.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Implement Stage 2 GPU-MCTS with Metamodel Integration",
+        "description": "Integrate MCTS engine with metamodel evaluation for 500→50 feature reduction, implementing ensemble forest management with 100+ trees and diversity mechanisms",
+        "details": "Connect Stage 1 output (500 features) to MCTS initialization with feature indexing. Implement ensemble forest with 100 trees split across dual GPUs (50 trees each). Create diversity mechanisms: random feature subsampling (80% per tree), exploration constant variation (0.5-2.0), different random seeds. Build metamodel integration replacing expensive CV evaluation with neural network predictions. Implement progressive feature masking as features are selected/deselected. Create consensus building across trees using weighted voting based on tree performance. Add dynamic load balancing monitoring tree throughput and redistributing work. Implement convergence detection when top features stabilize across trees.",
+        "testStrategy": "Test 500→50 feature reduction maintains feature quality vs exhaustive search. Verify ensemble diversity with feature selection overlap <70% between trees. Test metamodel integration provides 1000x speedup over real evaluation. Validate load balancing maintains >80% GPU utilization on both cards. Test convergence detection triggers after stable feature set. Verify consensus building identifies robust features across trees.",
+        "priority": "high",
+        "dependencies": [
+          3,
+          4,
+          5
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Stage 1 Output Integration and Feature Indexing",
+            "description": "Create interface layer to receive 500-feature output from Stage 1 and build efficient indexing system for MCTS tree operations",
+            "dependencies": [],
+            "details": "Implement feature vector receiver accepting Stage 1's 500 selected features with metadata. Build feature indexing system mapping original feature IDs to reduced set positions. Create feature state tracker maintaining selected/deselected status across all trees. Implement feature metadata storage including names, types, and importance scores from Stage 1. Build validation layer ensuring feature consistency between Stage 1 output and MCTS input.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Ensemble Forest Architecture for 100 Trees",
+            "description": "Design and implement core ensemble forest structure supporting 100+ MCTS trees with efficient memory management",
+            "dependencies": [
+              1
+            ],
+            "details": "Create forest manager class handling tree lifecycle (creation, execution, termination). Implement tree pool with configurable size (default 100) and dynamic allocation. Build tree state synchronization system for coordinating feature selection across trees. Design memory-efficient tree representation minimizing GPU memory overhead. Implement tree ID assignment and tracking system for distributed execution.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Dual-GPU Tree Distribution System",
+            "description": "Implement work distribution system splitting 100 trees across two RTX 4090 GPUs with balanced load",
+            "dependencies": [
+              2
+            ],
+            "details": "Create GPU assignment module allocating trees 1-50 to GPU0 and 51-100 to GPU1. Implement CUDA context management for dual-GPU execution without interference. Build tree-to-GPU mapping with dynamic reallocation capability. Design GPU memory pre-allocation system reserving space for 50 trees per GPU. Implement GPU health monitoring and automatic work redistribution on failure.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Diversity Mechanisms Implementation",
+            "description": "Build diversity-promoting mechanisms ensuring trees explore different parts of feature space",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement random feature subsampling with 80% selection per tree using different random seeds. Create exploration constant variation system assigning values between 0.5-2.0 to each tree. Build initial state randomization giving trees different starting feature selections. Implement feature masking diversity preventing trees from selecting identical feature subsets. Design diversity metrics tracking feature overlap and selection patterns across ensemble.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Metamodel Integration for Fast Evaluation",
+            "description": "Integrate neural network metamodel replacing expensive cross-validation with fast approximation",
+            "dependencies": [
+              1
+            ],
+            "details": "Create metamodel interface accepting feature subsets and returning performance predictions. Implement batched metamodel evaluation for multiple candidate feature sets. Build caching system storing metamodel predictions to avoid redundant evaluations. Design fallback mechanism using real evaluation when metamodel confidence is low. Implement metamodel update trigger when prediction accuracy degrades.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Progressive Feature Masking System",
+            "description": "Implement dynamic feature masking as selections are made or rejected during MCTS exploration",
+            "dependencies": [
+              1,
+              5
+            ],
+            "details": "Create feature mask data structure efficiently tracking available features per tree. Implement mask update logic when features are selected or permanently rejected. Build mask propagation system ensuring child nodes inherit parent constraints. Design mask merging algorithm for combining constraints from multiple trees. Implement mask validation ensuring minimum features remain available for selection.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Consensus Building with Weighted Voting",
+            "description": "Create consensus mechanism aggregating feature selections from all trees using weighted voting",
+            "dependencies": [
+              2,
+              4
+            ],
+            "details": "Implement feature vote counting system tracking selection frequency across all trees. Create weight calculation based on tree performance and exploration depth. Build consensus threshold mechanism requiring minimum agreement percentage. Design tie-breaking rules for features with equal votes. Implement progressive consensus allowing early stopping when strong agreement emerges.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 8,
+            "title": "Dynamic Load Balancing Across GPUs",
+            "description": "Build load balancing system maintaining optimal GPU utilization throughout ensemble execution",
+            "dependencies": [
+              3
+            ],
+            "details": "Create GPU utilization monitoring sampling usage every 100ms. Implement work stealing allowing idle GPU to take trees from overloaded GPU. Build tree migration protocol safely moving trees between GPUs mid-execution. Design load prediction model estimating tree computational requirements. Implement adaptive batch sizing adjusting tree updates based on GPU capacity.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 9,
+            "title": "Convergence Detection Algorithm",
+            "description": "Implement convergence detection determining when ensemble has reached stable feature selection",
+            "dependencies": [
+              7
+            ],
+            "details": "Create convergence metrics tracking feature selection stability over iterations. Implement sliding window analysis detecting when selections stop changing. Build early stopping criteria based on consensus strength and iteration count. Design adaptive convergence thresholds adjusting to problem difficulty. Implement convergence visualization showing selection evolution over time.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 10,
+            "title": "Performance Monitoring and Metrics",
+            "description": "Build comprehensive monitoring system tracking ensemble performance and resource utilization",
+            "dependencies": [
+              3,
+              8
+            ],
+            "details": "Implement GPU metrics collection (utilization, memory, temperature) with 1-second granularity. Create tree performance tracking including iterations, depth, and feature selections. Build ensemble statistics aggregating diversity, consensus, and convergence metrics. Design performance dashboard with real-time visualization. Implement metric logging for post-execution analysis and debugging.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 11,
+            "title": "PCIe Communication Module",
+            "description": "Create efficient inter-GPU communication system for sharing top candidates with minimal overhead",
+            "dependencies": [
+              3,
+              7
+            ],
+            "details": "Implement candidate serialization packing top 10 feature sets into compact format. Create PCIe transfer scheduler triggering exchanges every 1000 iterations. Build asynchronous communication avoiding GPU stalls during transfers. Design candidate merging logic combining results from both GPUs. Implement transfer monitoring ensuring bandwidth stays under 100MB per sync.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 12,
+            "title": "Shared Memory Coordination",
+            "description": "Build CPU-based coordination layer using mutex-protected shared memory for ensemble synchronization",
+            "dependencies": [
+              11
+            ],
+            "details": "Create shared memory segment for inter-process communication between GPU controllers. Implement mutex-based locking ensuring thread-safe access to shared state. Build message passing protocol for coordination commands and status updates. Design shared candidate pool accessible by both GPU processes. Implement deadlock detection and recovery mechanisms.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 13,
+            "title": "Fault Tolerance and Recovery",
+            "description": "Implement robust fault tolerance detecting failures and redistributing work to maintain operation",
+            "dependencies": [
+              3,
+              8
+            ],
+            "details": "Create GPU health monitoring detecting crashes, hangs, or memory errors. Implement checkpoint system saving tree states every 5000 iterations. Build single-GPU fallback mode redistributing all 100 trees to remaining GPU. Design partial result recovery extracting useful data from failed trees. Implement graceful degradation maintaining operation with reduced tree count.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 14,
+            "title": "SQLite Result Writing Module",
+            "description": "Create result persistence layer writing selected features and metrics back to SQLite database",
+            "dependencies": [
+              9
+            ],
+            "details": "Implement result schema with tables for final features, ensemble metrics, and tree statistics. Create atomic write operations ensuring database consistency. Build result versioning supporting multiple runs on same dataset. Design metadata storage capturing all ensemble configuration parameters. Implement result validation checking feature IDs match original dataset.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 15,
+            "title": "Memory-Efficient Tree Representation",
+            "description": "Design compact tree data structures minimizing GPU memory usage for 50 trees per device",
+            "dependencies": [
+              2
+            ],
+            "details": "Create compressed node representation using bit-packed feature indices. Implement node pooling with pre-allocated memory blocks avoiding fragmentation. Build lazy node expansion creating children only when visited. Design shared feature vector storage avoiding duplication across trees. Implement memory defragmentation routine consolidating free space.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 16,
+            "title": "Ensemble Configuration System",
+            "description": "Build configuration management for ensemble parameters with validation and defaults",
+            "dependencies": [],
+            "details": "Create configuration schema defining all ensemble parameters with types and ranges. Implement parameter validation ensuring valid combinations (tree count, GPU assignment). Build configuration file parser supporting JSON and YAML formats. Design parameter override system for command-line adjustments. Implement configuration templates for common ensemble scenarios.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 17,
+            "title": "Integration Testing Framework",
+            "description": "Create comprehensive test suite validating end-to-end ensemble functionality",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "details": "Implement synthetic dataset generator creating controlled test scenarios. Build integration tests validating 500→50 feature reduction accuracy. Create performance benchmarks measuring GPU utilization and speedup. Design stress tests with maximum tree counts and feature dimensions. Implement regression tests ensuring changes don't break existing functionality.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 18,
+            "title": "Ensemble Debugging and Profiling Tools",
+            "description": "Build debugging utilities for analyzing ensemble behavior and optimizing performance",
+            "dependencies": [
+              10,
+              17
+            ],
+            "details": "Create tree state visualizer showing feature selections and exploration paths. Implement ensemble timeline displaying synchronization events and GPU activities. Build profiling hooks measuring time spent in each component. Design feature selection heatmap showing selection frequency across ensemble. Implement debug logging with configurable verbosity levels for each subsystem.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Build Stage 3 Precise Evaluation Module",
+        "description": "Implement final evaluation stage using real XGBoost/RandomForest models with full cross-validation for 50→10-20 optimal features selection",
+        "details": "Create model evaluation pipeline supporting XGBoost, RandomForest, and LightGBM with Julia MLJ.jl interface. Implement stratified k-fold cross-validation (default k=5) with proper train/test splits. Build parallel model training across CPU cores for multiple feature combinations. Create feature interaction analysis using SHAP values or permutation importance. Implement pairwise feature interaction strength calculation. Add statistical significance testing using paired t-tests on CV folds. Build final feature ranking combining model performance and feature importance. Create comparison module evaluating against baseline (all features) performance.",
+        "testStrategy": "Test model training produces consistent CV scores across runs. Verify feature interaction analysis identifies known relationships. Test final selection improves or matches baseline accuracy. Validate statistical significance testing with p-value <0.05. Test CPU parallelization scales linearly with core count. Verify memory usage for model training <16GB RAM.",
+        "priority": "medium",
+        "dependencies": [
+          6
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up MLJ.jl model evaluation pipeline infrastructure",
+            "description": "Create the core infrastructure for MLJ.jl model evaluation including model wrappers for XGBoost, RandomForest, and LightGBM with proper hyperparameter configuration",
+            "dependencies": [],
+            "details": "Install MLJ.jl and required model packages (XGBoost.jl, DecisionTree.jl, LightGBM.jl). Create model wrapper structs that standardize interfaces across different ML libraries. Implement model factory pattern to instantiate models with default hyperparameters. Add configuration system for model-specific parameters (max_depth, n_estimators, learning_rate). Create unified prediction interface that handles both classification and regression tasks. Implement model serialization for checkpoint saving.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Implement stratified k-fold cross-validation system",
+            "description": "Build robust stratified k-fold CV implementation that maintains class distribution in splits and handles edge cases for small datasets",
+            "dependencies": [
+              1
+            ],
+            "details": "Create stratified splitting function that preserves target distribution across folds (default k=5). Implement fold validation to ensure minimum samples per class in each fold. Add support for regression tasks using quantile-based stratification. Create CV iterator that yields train/test indices for each fold. Implement fold-wise metric calculation (accuracy, F1, AUC, RMSE). Add reproducibility support with seed management across folds. Handle imbalanced datasets with SMOTE option.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Build parallel CPU model training system",
+            "description": "Develop multi-threaded training system that efficiently utilizes all CPU cores for parallel model evaluation across feature combinations",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement thread pool using Julia's Threads.@threads for parallel execution. Create work queue system for distributing feature combinations across threads. Implement thread-safe result collection with atomic operations. Add progress monitoring with ETA calculation for long-running evaluations. Create load balancing to handle varying model training times. Implement memory-efficient feature subset extraction for each thread. Add graceful interruption handling with partial result saving.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Implement SHAP values and permutation importance analysis",
+            "description": "Create feature importance analysis using both SHAP values and permutation importance methods with efficient computation",
+            "dependencies": [
+              3
+            ],
+            "details": "Implement TreeSHAP algorithm for tree-based models (XGBoost, RandomForest, LightGBM). Create permutation importance calculator with multiple shuffle iterations. Build feature interaction matrix using SHAP interaction values. Implement baseline comparison for importance scores. Add visualization exports for importance rankings. Create importance aggregation across CV folds with confidence intervals. Optimize SHAP computation using sampling for large datasets.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Develop pairwise feature interaction strength calculator",
+            "description": "Build system to quantify pairwise feature interactions using model-based metrics and statistical measures",
+            "dependencies": [
+              4
+            ],
+            "details": "Implement H-statistic calculation for pairwise feature interactions. Create mutual information calculator for feature pairs. Build interaction strength matrix using partial dependence plots. Implement interaction detection using model performance degradation. Add support for categorical feature interactions. Create sparse matrix storage for interaction scores. Implement threshold-based filtering for significant interactions only.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Create statistical significance testing framework",
+            "description": "Implement comprehensive statistical testing suite for model comparison and feature selection validation",
+            "dependencies": [
+              5
+            ],
+            "details": "Implement paired t-tests on CV fold performances with Bonferroni correction. Create Wilcoxon signed-rank test for non-parametric comparisons. Add McNemar's test for classification model comparisons. Implement confidence interval calculation for performance metrics. Create p-value adjustment for multiple hypothesis testing. Add effect size calculation (Cohen's d) for practical significance. Build statistical report generator with interpretation guidelines.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Build final feature ranking and selection module",
+            "description": "Create comprehensive feature ranking system that combines multiple importance metrics to select optimal 10-20 features",
+            "dependencies": [
+              6
+            ],
+            "details": "Implement weighted ranking system combining SHAP, permutation importance, and interaction scores. Create Pareto-optimal feature selection considering accuracy vs feature count. Build incremental feature selection with early stopping. Implement ensemble voting across different models for robust selection. Add constraint handling for must-include/exclude features. Create feature stability analysis across CV folds. Generate detailed selection report with justifications.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 8,
+            "title": "Develop model comparison and results export system",
+            "description": "Create comprehensive comparison framework for different models and feature sets with detailed reporting",
+            "dependencies": [
+              7
+            ],
+            "details": "Implement model performance comparison table with multiple metrics. Create feature set comparison showing performance delta. Build visualization exports (ROC curves, confusion matrices, feature importance plots). Implement results serialization to JSON/CSV formats. Create LaTeX table generator for academic papers. Add model ensemble creation from top performers. Generate executive summary with key findings and recommendations.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Develop Rich Console Dashboard UI",
+        "description": "Create real-time Rich terminal dashboard with multi-panel layout showing GPU status, MCTS progress, performance metrics, and feature analysis with 100ms refresh rate",
+        "details": "Implement Rich console layout with 6 panels: dual GPU status (utilization/memory/temp), hybrid search progress (stage indicators/scores), performance metrics (nodes/sec/bandwidth), feature analysis (reduction stats), system log (rolling 100 entries). Create update system with 100ms refresh using Rich.live module. Build GPU monitoring reading nvidia-ml-py for real-time metrics. Implement sparkline graphs for score trends using 60-second windows. Add color coding: green (normal), yellow (warning >80%), red (critical >95%). Create keyboard controls: Q(uit), P(ause), S(ave), E(xport), C(onfig), H(elp), 1-3(stage views). Build progress indicators for each stage with time estimates. Add Unicode box drawing for professional appearance.",
+        "testStrategy": "Test 10 FPS refresh rate maintains <5% CPU usage. Verify GPU metrics update correctly for both RTX 4090 cards. Test sparkline graphs render smoothly without flicker. Validate keyboard shortcuts respond within 100ms. Test color coding triggers at correct thresholds. Verify layout adapts to terminal sizes 80x24 to 200x60. Test with 256-color and true color terminal support.",
+        "priority": "medium",
+        "dependencies": [
+          1,
+          2
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design Rich Console Layout Architecture",
+            "description": "Create the 6-panel layout structure using Rich's Layout and Panel components with proper sizing and positioning",
+            "dependencies": [],
+            "details": "Define layout grid with 2x3 configuration for dual GPU panels (top row), hybrid search progress and performance metrics (middle row), feature analysis and system log (bottom row). Implement responsive sizing logic that adapts to terminal dimensions. Create base Panel classes with consistent styling and borders. Set up layout refresh mechanism without full screen redraw to prevent flicker.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Implement Real-time Update System",
+            "description": "Build the 100ms refresh system using Rich.live module with buffered updates and minimal redraws",
+            "dependencies": [
+              1
+            ],
+            "details": "Create update loop using Rich.live with 100ms intervals. Implement double-buffering system to prepare updates off-screen. Build delta update mechanism that only redraws changed panels. Add timing controls to ensure consistent refresh rate under load. Implement update queue system for asynchronous data sources. Create performance monitoring to track actual vs target refresh rates.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Integrate GPU Monitoring with nvidia-ml-py",
+            "description": "Create GPU data collection system for dual RTX 4090 cards with efficient polling and caching",
+            "dependencies": [],
+            "details": "Initialize nvidia-ml-py handles for both GPUs. Create GPU metrics collector class polling utilization, memory usage, temperature, power draw, and clock speeds. Implement caching layer to reduce API calls. Build error handling for GPU unavailability. Create data structures for storing historical metrics for sparklines. Add GPU selection logic for monitoring specific devices.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Develop Sparkline Graph Components",
+            "description": "Build sparkline visualization system for score trends using 60-second rolling windows",
+            "dependencies": [
+              2
+            ],
+            "details": "Create sparkline renderer using Unicode block characters for smooth graphs. Implement circular buffer for 600 data points (60 seconds at 10 FPS). Build auto-scaling logic for y-axis based on data range. Add smoothing algorithms to reduce visual noise. Create multiple sparkline types for different metrics (scores, GPU usage, performance). Implement color gradients for value ranges.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Implement Color Coding and Threshold System",
+            "description": "Create dynamic color system with configurable thresholds for visual status indication",
+            "dependencies": [
+              1
+            ],
+            "details": "Define color schemes for normal (green), warning (yellow), and critical (red) states. Create threshold configuration for each metric type (GPU temp >80°C yellow, >90°C red). Implement smooth color transitions using Rich's gradient support. Build theme system for different color schemes (light/dark/high-contrast). Add colorblind-friendly mode with patterns/symbols. Create alert flashing for critical conditions.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Add Keyboard Controls and Navigation",
+            "description": "Implement responsive keyboard interface for dashboard control and navigation",
+            "dependencies": [
+              2
+            ],
+            "details": "Create keyboard event handler using Rich's key bindings. Implement panel focus system with Tab navigation. Add hotkeys for pause/resume (space), quit (q), reset stats (r), toggle panels (1-6). Build command palette for advanced functions. Create help overlay showing available shortcuts. Implement vim-style navigation for log scrolling. Ensure <100ms response time for all interactions.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Build Progress Indicators with Time Estimates",
+            "description": "Create comprehensive progress tracking system with ETA calculations and stage indicators",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Implement multi-level progress bars for overall job and current stage. Create ETA calculator using rolling average of processing speed. Build stage indicator showing current MCTS phase (selection/expansion/simulation/backprop). Add progress history graph showing speed variations. Implement pause/resume aware time calculations. Create progress persistence for recovery after interruption.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 8,
+            "title": "Optimize Terminal Compatibility and Rendering",
+            "description": "Ensure smooth rendering across different terminal emulators with flicker-free updates",
+            "dependencies": [
+              2,
+              4
+            ],
+            "details": "Implement terminal capability detection for color support and Unicode. Create fallback renderers for limited terminals. Optimize cursor movement to minimize flicker. Build frame rate limiter adapting to terminal performance. Add ANSI escape sequence batching for efficiency. Test compatibility with major terminals (iTerm2, Windows Terminal, Gnome Terminal). Implement partial redraw optimization.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 9,
+            "title": "Create GPU Status Panel Components",
+            "description": "Build detailed GPU status panels showing utilization, memory, temperature with visual indicators",
+            "dependencies": [
+              3,
+              5
+            ],
+            "details": "Design GPU panel layout with utilization bar graph, memory usage pie chart, temperature gauge. Implement real-time metric updates from nvidia-ml-py data. Create visual GPU activity indicator using animated symbols. Add power consumption and clock speed displays. Build GPU comparison view for dual-card setups. Implement historical min/max/avg statistics. Add thermal throttling warnings.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 10,
+            "title": "Develop System Log Panel with Filtering",
+            "description": "Create rolling log panel with 100-entry buffer and intelligent filtering/searching",
+            "dependencies": [
+              1,
+              6
+            ],
+            "details": "Implement circular buffer for last 100 log entries. Create log level filtering (debug/info/warn/error). Add regex-based search functionality. Build log entry formatting with timestamps and color coding. Implement auto-scroll with pause on user interaction. Create log export functionality. Add log entry details view on selection. Implement intelligent log grouping for repeated messages.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Implement Multi-GPU Coordination and Scaling",
+        "description": "Create multi-GPU distribution system for dual RTX 4090 setup with independent tree forests, minimal PCIe transfers, and fault tolerance achieving >85% scaling efficiency",
+        "details": "Implement GPU work distribution: GPU0 handles trees 1-50 + metamodel training, GPU1 handles trees 51-100 + metamodel inference. Create PCIe communication module transferring only top 10 candidates every 1000 iterations. Build synchronization system using CPU coordination with mutex-protected shared memory. Implement duplicate dataset storage on both GPUs to minimize transfers. Create fault tolerance detecting GPU failures and redistributing work to remaining GPU. Add performance monitoring tracking per-GPU throughput and efficiency. Implement dynamic rebalancing based on GPU performance differences. Build unified result aggregation combining outputs from both GPUs.",
+        "testStrategy": "Test work distribution maintains balanced GPU utilization (±5%). Verify PCIe transfers stay under 100MB per synchronization. Test fault tolerance by simulating GPU failure and confirming single-GPU fallback. Validate scaling efficiency >85% vs single GPU baseline. Test synchronization doesn't create GPU idle time >1%. Verify result aggregation produces consistent outputs.",
+        "priority": "medium",
+        "dependencies": [
+          4,
+          6
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design GPU Work Distribution Strategy",
+            "description": "Design and implement the work distribution strategy for dual RTX 4090 setup, allocating trees 1-50 + metamodel training to GPU0 and trees 51-100 + metamodel inference to GPU1",
+            "dependencies": [],
+            "details": "Create work distribution manager that assigns MCTS trees to specific GPUs based on tree indices. GPU0 handles trees 1-50 and metamodel training operations. GPU1 handles trees 51-100 and metamodel inference operations. Implement load balancing metrics to track GPU utilization and ensure ±5% balance between GPUs. Design interfaces for work assignment and result collection.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Implement PCIe Communication Module",
+            "description": "Build PCIe communication module for minimal data transfers between GPUs, transferring only top 10 candidates every 1000 iterations",
+            "dependencies": [
+              1
+            ],
+            "details": "Develop PCIe transfer module using CUDA peer-to-peer communication or CPU-mediated transfers. Implement candidate selection algorithm to identify top 10 features based on ensemble consensus. Create buffering system to batch transfers every 1000 iterations. Optimize data serialization to minimize transfer size (<100MB per sync). Add compression for feature indices and scores.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Create CPU-Based Synchronization System",
+            "description": "Implement CPU coordination system with mutex-protected shared memory for GPU synchronization and state management",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Build shared memory manager using POSIX shared memory or memory-mapped files. Implement mutex protection using std::mutex or pthread_mutex for thread-safe access. Create synchronization primitives for GPU coordination (barriers, condition variables). Design state machine for GPU synchronization phases. Implement CPU-side orchestration logic for coordinating GPU operations.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Implement Duplicate Dataset Storage System",
+            "description": "Create system for storing complete dataset copies on both GPUs to minimize PCIe transfers during feature evaluation",
+            "dependencies": [],
+            "details": "Implement dataset replication during initialization phase to copy full dataset to both GPU memories. Create memory management system to handle 500-5000 features × 1K-1M samples per GPU. Design efficient storage format optimized for column-wise access patterns. Implement dataset versioning to handle updates. Add memory usage monitoring to prevent OOM conditions.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Build Fault Tolerance and GPU Failure Detection",
+            "description": "Implement fault tolerance system that detects GPU failures and automatically redistributes work to remaining GPU",
+            "dependencies": [
+              1,
+              3
+            ],
+            "details": "Create GPU health monitoring using CUDA error checking and heartbeat mechanisms. Implement failure detection with configurable timeout thresholds. Build work redistribution algorithm that migrates failed GPU's trees to healthy GPU. Design state checkpointing for recovery. Implement graceful degradation to single-GPU mode while maintaining operation.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Develop Per-GPU Performance Monitoring",
+            "description": "Create comprehensive performance monitoring system tracking utilization, memory usage, and throughput for each GPU",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement CUDA event-based timing for kernel execution profiling. Create metrics collection for GPU utilization, memory bandwidth, and compute throughput. Build performance dashboard showing real-time stats per GPU. Add logging system for performance data with configurable verbosity. Implement anomaly detection for performance degradation.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Implement Dynamic Rebalancing Algorithm",
+            "description": "Create dynamic load rebalancing algorithm that redistributes trees between GPUs based on performance metrics",
+            "dependencies": [
+              1,
+              6
+            ],
+            "details": "Design rebalancing triggers based on utilization imbalance thresholds (>10% difference). Implement tree migration protocol that moves trees between GPUs without interrupting execution. Create cost model for rebalancing decisions considering migration overhead. Build hysteresis mechanism to prevent oscillation. Implement gradual rebalancing to maintain system stability.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 8,
+            "title": "Create Unified Result Aggregation System",
+            "description": "Build system for aggregating results from both GPUs and creating unified ensemble consensus",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Implement result collection from all 100 trees across both GPUs. Create voting mechanism for ensemble consensus with configurable thresholds. Build feature ranking aggregation combining scores from all trees. Implement result caching to avoid redundant aggregations. Design efficient data structures for storing and querying ensemble results.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 9,
+            "title": "Implement Scaling Efficiency Validation",
+            "description": "Create comprehensive testing framework to validate >85% scaling efficiency compared to single GPU baseline",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "details": "Develop single-GPU baseline implementation for performance comparison. Create benchmark suite testing various dataset sizes and feature counts. Implement efficiency metrics calculation (speedup, strong/weak scaling). Build automated testing harness for continuous validation. Design experiments to identify scaling bottlenecks and optimization opportunities.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 10,
+            "title": "Optimize Memory Access Patterns",
+            "description": "Optimize GPU memory access patterns for coalesced reads and maximize bandwidth utilization across both GPUs",
+            "dependencies": [
+              4
+            ],
+            "details": "Profile memory access patterns using NVIDIA Nsight Compute. Implement coalesced memory access for feature data reads. Optimize data layout for GPU cache hierarchy (L1/L2). Create memory pooling to reduce allocation overhead. Implement prefetching strategies for predictable access patterns.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 11,
+            "title": "Build Integration with Stage 2 MCTS Engine",
+            "description": "Create seamless integration between multi-GPU coordination system and existing Stage 2 MCTS components",
+            "dependencies": [
+              8
+            ],
+            "details": "Adapt MCTS tree initialization to work with distributed GPU architecture. Modify metamodel interface to support split training/inference across GPUs. Integrate with existing feature masking and selection mechanisms. Ensure compatibility with diversity mechanisms (subsampling, exploration variation). Validate end-to-end pipeline functionality.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 12,
+            "title": "Implement Production Deployment Configuration",
+            "description": "Create production-ready configuration system with deployment scripts and operational documentation",
+            "dependencies": [
+              9,
+              11
+            ],
+            "details": "Build configuration management for GPU topology, memory limits, and performance targets. Create deployment scripts for multi-GPU environment setup. Implement logging and monitoring integration for production systems. Design operational runbooks for common failure scenarios. Add performance tuning guidelines based on hardware configuration.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Create Integration Testing and Deployment Pipeline",
+        "description": "Build comprehensive testing suite, Docker containerization with NVIDIA runtime, and production deployment configuration for the complete hybrid feature selection system",
+        "details": "Create integration test suite covering all three stages with reference datasets (Titanic, MNIST features, synthetic 5000-feature data). Implement performance benchmarks validating: Stage 1 <30s, Stage 2 >80% GPU utilization, Stage 3 accuracy targets. Build Docker container with NVIDIA runtime including all dependencies and CUDA libraries. Create docker-compose configuration for multi-container deployment. Implement health checks monitoring GPU availability and memory. Add Prometheus metrics exporters for GPU utilization, throughput, and stage progress. Create deployment scripts for Kubernetes with GPU node selectors. Build configuration management for production parameters. Add automated backup for checkpoints and results.",
+        "testStrategy": "Test end-to-end pipeline on 3 reference datasets meeting all performance targets. Verify Docker container runs on fresh Ubuntu 22.04 with only NVIDIA drivers. Test Kubernetes deployment scales to multiple nodes. Validate Prometheus metrics match dashboard values. Test checkpoint recovery after container restart. Verify production config handles 5000 features → optimal subset in <2 minutes total.",
+        "priority": "low",
+        "dependencies": [
+          7,
+          8,
+          9
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Integration Test Suite with Reference Datasets",
+            "description": "Build comprehensive integration test framework covering all three pipeline stages with standard datasets including Titanic, MNIST features, and synthetic 5000-feature dataset. Implement test fixtures, data loaders, and validation harnesses.",
+            "dependencies": [],
+            "details": "Set up test directory structure with data/, fixtures/, integration/, and benchmarks/. Download and preprocess reference datasets: Titanic (891×12), MNIST features (60K×784), synthetic dataset (10K×5000). Create test fixtures for each stage with expected outputs. Implement end-to-end test runner validating feature reduction: 5000→500→50→15. Build result validation framework checking feature quality metrics, runtime constraints, and memory usage. Create parameterized tests for different dataset sizes and feature counts.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Implement Performance Benchmark Framework",
+            "description": "Design and implement comprehensive benchmarking system measuring throughput, latency, GPU utilization, and memory usage across all pipeline stages with automated performance regression detection.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create benchmark harness measuring: Stage 1 runtime (<30s for 5000 features), Stage 2 GPU utilization (>80%), Stage 3 accuracy targets (>0.95 correlation). Implement GPU profiling using CUDA events and nvml for utilization metrics. Build memory profiling tracking host/device allocation patterns. Create latency measurements for metamodel inference (<1ms for 1000 combinations). Implement automated regression detection comparing against baseline metrics. Generate performance reports with visualization of bottlenecks and optimization opportunities.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Build Docker Container with NVIDIA Runtime",
+            "description": "Create production Docker container including Julia runtime, CUDA libraries, all dependencies, and GPU support through NVIDIA Container Toolkit with proper layer caching and optimization.",
+            "dependencies": [],
+            "details": "Write multi-stage Dockerfile: base Ubuntu 22.04, CUDA 11.8 runtime, Julia 1.10+, system dependencies. Configure NVIDIA runtime requirements and GPU device mounting. Install Julia packages with proper precompilation: CUDA.jl, Flux.jl, MLJ.jl, SQLite.jl. Copy application code with appropriate .dockerignore. Implement health check script verifying GPU availability and CUDA functionality. Optimize image size through layer caching and dependency pruning. Create entrypoint script handling environment configuration and startup validation.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Create Docker Compose Multi-Container Configuration",
+            "description": "Design docker-compose.yml for multi-container deployment including main application, database, monitoring services, and proper networking with GPU resource allocation.",
+            "dependencies": [
+              3
+            ],
+            "details": "Configure main application service with GPU device requests and runtime: nvidia. Set up PostgreSQL/SQLite container for feature selection history and results. Add Redis container for caching metamodel predictions and MCTS state. Configure networking with custom bridge network for inter-container communication. Set up volume mounts for data persistence, model checkpoints, and logs. Implement environment variable configuration for API keys, GPU selection, and performance tuning. Add container dependencies and health check configurations ensuring proper startup order.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Implement Health Check and Monitoring Setup",
+            "description": "Build comprehensive health monitoring system checking GPU availability, memory usage, model readiness, and pipeline component status with automatic alerting and recovery mechanisms.",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "Create health check endpoints: /health/gpu (CUDA availability, memory), /health/model (metamodel loaded, inference ready), /health/pipeline (all stages operational). Implement GPU monitoring using nvidia-ml-py checking temperature, utilization, memory, and errors. Build pipeline component checks validating database connections, file system access, and inter-process communication. Create automatic recovery mechanisms for transient failures: GPU reset, model reload, checkpoint recovery. Implement health aggregation endpoint providing overall system status. Add configurable thresholds for warning/critical states.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Build Prometheus Metrics Exporters",
+            "description": "Implement comprehensive metrics collection and export for Prometheus monitoring including GPU metrics, pipeline performance, model accuracy, and business metrics with proper labeling and aggregation.",
+            "dependencies": [
+              5
+            ],
+            "details": "Create metrics exporter service exposing /metrics endpoint in Prometheus format. Implement GPU metrics: utilization_percent, memory_used_bytes, temperature_celsius, power_watts per device. Add pipeline metrics: features_processed_total, stage_duration_seconds, selection_quality_score. Export model metrics: metamodel_predictions_total, inference_latency_seconds, accuracy_correlation. Include business metrics: datasets_processed_total, feature_reduction_ratio, compute_cost_dollars. Implement proper metric labeling with stage, gpu_id, dataset_name. Add histogram buckets for latency measurements and summary statistics.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Design Kubernetes Deployment Configuration",
+            "description": "Create production-ready Kubernetes manifests including deployments, services, ConfigMaps, and GPU resource scheduling for scalable deployment across multiple nodes with proper affinity rules.",
+            "dependencies": [
+              3,
+              6
+            ],
+            "details": "Write Deployment manifest with GPU resource limits (nvidia.com/gpu: 2), memory requests/limits, and proper update strategy. Create Service definitions for API endpoints and metrics exposure. Build ConfigMap for application configuration and environment variables. Implement PersistentVolumeClaims for model storage and checkpoints. Add node affinity rules ensuring GPU-capable nodes and multi-GPU configurations. Create HorizontalPodAutoscaler based on GPU utilization and queue depth. Implement PodDisruptionBudget ensuring availability during updates. Add NetworkPolicy for secure inter-pod communication.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 8,
+            "title": "Implement Automated Backup System",
+            "description": "Build automated backup solution for model checkpoints, training history, feature selection results, and system configuration with versioning, retention policies, and disaster recovery procedures.",
+            "dependencies": [
+              7
+            ],
+            "details": "Create backup orchestrator scheduling regular snapshots of critical data: model weights, metamodel state, MCTS trees, selection history. Implement incremental backup strategy for large model files using content hashing. Build S3-compatible object storage integration for off-site backups. Create backup versioning with configurable retention policies (hourly: 24, daily: 7, weekly: 4). Implement automated restoration testing validating backup integrity. Add point-in-time recovery capability for feature selection sessions. Create backup monitoring with alerts for failed backups or storage quota issues.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 9,
+            "title": "Create End-to-End Integration Tests",
+            "description": "Implement comprehensive integration test suite validating complete pipeline functionality from raw features to final selection across all reference datasets with performance and accuracy validation.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Build integration test scenarios: full pipeline execution on Titanic (5min), MNIST subset (30min), synthetic data (2hr). Implement accuracy validation comparing against baseline feature selection methods (correlation, mutual information). Create performance validation ensuring each stage meets timing requirements under load. Test fault tolerance with simulated failures: GPU errors, memory exhaustion, network issues. Validate checkpoint recovery maintaining pipeline state after interruption. Implement data validation ensuring feature consistency across stages. Create regression test suite for model updates and configuration changes.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 10,
+            "title": "Establish Production Deployment and Monitoring",
+            "description": "Deploy complete system to production environment with full observability stack including Prometheus, Grafana dashboards, alerting rules, and runbooks for operational excellence.",
+            "dependencies": [
+              7,
+              8,
+              9
+            ],
+            "details": "Execute Kubernetes deployment to production cluster with staged rollout strategy. Configure Prometheus scraping for all metrics endpoints with 15s intervals. Create Grafana dashboards: GPU utilization, pipeline performance, model accuracy, cost tracking. Implement alerting rules: GPU failure, memory pressure, performance degradation, backup failures. Build runbooks for common operational scenarios: scaling, updates, incident response. Configure log aggregation with structured logging and correlation IDs. Implement SLO monitoring with error budgets for availability and performance targets.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "created": "2025-07-14T16:41:00.071Z",
+      "updated": "2025-07-14T16:41:00.071Z",
+      "description": "Tasks for master context"
+    }
+  }
+}
