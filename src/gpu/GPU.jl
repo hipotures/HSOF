@@ -32,6 +32,10 @@ using .PCIeCommunication
 include("gpu_synchronization.jl")
 using .GPUSynchronization
 
+# Dataset Storage for Multi-GPU
+include("dataset_storage.jl")
+using .DatasetStorage
+
 # GPU Management exports
 export initialize_devices, get_device_info, validate_gpu_environment
 export GPUManager, DeviceManager, StreamManager, MemoryManager
@@ -64,6 +68,13 @@ export register_gpu!, unregister_gpu!, get_active_gpus
 export reset_event!, update_sync_stats!
 # Export phase enum values
 export PHASE_INIT, PHASE_READY, PHASE_RUNNING, PHASE_SYNCING, PHASE_DONE, PHASE_ERROR
+
+# Dataset Storage exports
+export DatasetReplica, DatasetManager, DatasetVersion, MemoryStats
+export create_dataset_manager, replicate_dataset!, get_dataset_replica
+export update_dataset!, get_memory_usage, has_sufficient_memory
+export load_dataset_to_gpu!, clear_dataset!, sync_datasets!
+export get_feature_column, get_sample_batch, get_dataset_info
 
 # Module initialization
 function __init__()
