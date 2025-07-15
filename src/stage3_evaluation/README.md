@@ -55,7 +55,64 @@ confidence = result.confidence_scores
 metrics = get_prediction_metrics(result, y_true)
 ```
 
-### 3. Model Configuration
+### 3. Cross-Validation System (`cross_validation.jl`)
+
+Comprehensive cross-validation framework:
+
+```julia
+# Stratified K-Fold for classification
+cv = StratifiedKFold(n_folds=5, shuffle=true, random_state=42)
+
+# Quantile-based stratification for regression
+cv_reg = QuantileStratifiedKFold(n_folds=5, n_quantiles=10)
+
+# Run cross-validation
+results = cross_validate_model(model, X, y, cv, 
+                             task_type=:classification,
+                             apply_smote=true)  # For imbalanced data
+
+# Access results
+fold_metrics = results["fold_metrics"]
+aggregated = results["aggregated_metrics"]
+```
+
+### 4. Parallel Training System (`parallel_training.jl`)
+
+High-performance parallel model training for evaluating many feature combinations:
+
+```julia
+# Create work items for different feature combinations
+feature_combinations = [[1,2,3], [4,5,6], [7,8,9,10]]
+model_specs = [
+    (:xgboost, Dict(:max_depth => 5)),
+    (:random_forest, Dict(:n_estimators => 100))
+]
+
+work_items = create_work_queue(feature_combinations, model_specs)
+
+# Create parallel trainer
+trainer = ParallelTrainer(work_items, 
+                         n_threads=Threads.nthreads(),
+                         memory_limit_mb=4096,
+                         show_progress=true)
+
+# Run parallel training
+results = train_models_parallel(trainer, X, y, 
+                              model_factory, cv_function)
+
+# Aggregate results by model type
+aggregated = collect_results(results)
+```
+
+Key features:
+- **Thread Pool Management**: Efficient distribution across available CPU cores
+- **Work Prioritization**: Process smaller feature sets first for quick feedback
+- **Progress Monitoring**: Real-time ETA calculation and progress bars
+- **Memory Efficiency**: Reusable feature buffers to minimize allocations
+- **Graceful Interruption**: Save partial results on Ctrl+C
+- **Load Balancing**: Dynamic work redistribution based on execution times
+
+### 5. Model Configuration
 
 Each model type has specific parameters:
 
