@@ -44,6 +44,10 @@ using .FaultTolerance
 include("performance_monitoring.jl")
 using .PerformanceMonitoring
 
+# Dynamic Rebalancing for Multi-GPU
+include("dynamic_rebalancing.jl")
+using .DynamicRebalancing
+
 # GPU Management exports
 export initialize_devices, get_device_info, validate_gpu_environment
 export GPUManager, DeviceManager, StreamManager, MemoryManager
@@ -108,6 +112,16 @@ export log_performance_data, set_log_level!
 export reset_metrics!, export_metrics
 # Export log level enum values
 export LOG_NONE, LOG_ERROR, LOG_WARN, LOG_INFO, LOG_DEBUG, LOG_TRACE
+
+# Dynamic Rebalancing exports
+export RebalancingManager, RebalancingDecision, MigrationPlan, RebalancingMetrics
+export create_rebalancing_manager, start_rebalancing!, stop_rebalancing!
+export check_imbalance, should_rebalance, create_migration_plan
+export execute_migration!, update_workload_metrics!
+export get_rebalancing_history, get_current_distribution
+export set_rebalancing_threshold!, enable_auto_rebalancing!
+# Export rebalancing state enum values
+export BALANCED, MONITORING, PLANNING, MIGRATING, STABILIZING
 
 # Module initialization
 function __init__()
