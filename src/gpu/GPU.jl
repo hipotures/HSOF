@@ -20,6 +20,10 @@ using .DeviceManager
 include("mcts_gpu.jl")
 using .MCTSGPU
 
+# Work Distribution for Multi-GPU
+include("work_distribution.jl")
+using .WorkDistribution
+
 # GPU Management exports
 export initialize_devices, get_device_info, validate_gpu_environment
 export GPUManager, DeviceManager, StreamManager, MemoryManager
@@ -27,6 +31,13 @@ export GPUManager, DeviceManager, StreamManager, MemoryManager
 # MCTS GPU exports
 export MCTSGPUEngine, initialize!, start!, stop!, get_statistics
 export select_features, get_best_features, reset_tree!
+
+# Work Distribution exports
+export WorkDistributor, GPUWorkAssignment, WorkloadMetrics
+export create_work_distributor, assign_tree_work, assign_metamodel_work
+export get_gpu_for_tree, get_tree_range, get_load_balance_ratio
+export update_metrics!, rebalance_if_needed!, get_work_summary
+export set_gpu_affinity, execute_on_gpu
 
 # Module initialization
 function __init__()
