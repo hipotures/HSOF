@@ -36,6 +36,16 @@ julia> include("benchmarks/run_benchmarks.jl")
 # Check linting (Julia doesn't have standard linting, but you can check formatting)
 julia> using JuliaFormatter
 julia> format("src", verbose=true)
+
+# Docker development and testing
+docker-compose build hsof                    # Build production container
+docker-compose --profile dev up hsof-dev     # Development with source mounting
+docker-compose --profile test up hsof-test   # Run tests in container
+docker-compose --profile benchmark up hsof-benchmark  # Performance benchmarks
+
+# Production deployment
+kubectl apply -f k8s/base/                   # Deploy to Kubernetes
+kubectl get pods -n hsof                     # Check deployment status
 ```
 
 ## High-Level Architecture
@@ -145,6 +155,40 @@ Keyboard shortcuts: Q(uit), P(ause), S(ave), E(xport), C(onfig), H(elp)
 4. **Test implementation**: Run relevant tests from test suite
 5. **Update progress**: `task-master update-subtask --id=<id> --prompt="notes"`
 6. **Complete task**: `task-master set-status --id=<id> --status=done`
+
+## Production Deployment
+
+### Docker Containerization (`docker/`)
+- Multi-stage Dockerfile with NVIDIA runtime support
+- Production-ready container with Julia 1.10+ and CUDA 11.8
+- Multiple run modes: default, interactive, server, benchmark, test
+- Comprehensive health checks for GPU and pipeline components
+- Environment variable configuration for scaling and tuning
+
+### Kubernetes Deployment (`k8s/`, `deployment/`)
+- GPU-aware pod scheduling with node affinity rules
+- Horizontal pod autoscaling based on GPU utilization
+- ConfigMaps and Secrets for production configuration
+- PersistentVolumes for model checkpoints and data storage
+- Service definitions for API and metrics endpoints
+
+### Monitoring and Observability (`deployment/monitoring/`)
+- **Prometheus**: Metrics collection with GPU, pipeline, and business metrics
+- **Grafana**: Real-time dashboards for GPU utilization, performance, and cost tracking
+- **AlertManager**: Alerting rules for GPU failures, memory pressure, and performance degradation
+- **SLO Monitoring**: Error budgets for availability (99.9%), latency (95% <30s), and throughput (100 datasets/h)
+
+### Logging Infrastructure (`deployment/logging/`)
+- **Fluentd**: Structured logging with correlation IDs and automatic enrichment
+- **Elasticsearch**: Centralized log storage with performance optimization
+- **Kibana**: Log analysis and search capabilities
+- **Julia Logging**: Custom structured loggers for GPU, pipeline, and correlation context
+
+### Operational Excellence (`deployment/runbooks/`, `deployment/docs/`)
+- Comprehensive runbooks for GPU temperature incidents, scaling operations, and incident response
+- Production deployment guide with step-by-step Kubernetes procedures
+- Daily, weekly, monthly, and quarterly operational procedures
+- Emergency response and escalation procedures
 
 ## PRD Implementation Notes
 
