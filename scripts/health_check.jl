@@ -6,82 +6,58 @@
 using Pkg
 Pkg.activate(".")
 
+# Load health monitoring modules
+include("../src/monitoring/health.jl")
+include("../src/monitoring/health_integration.jl")
+
+using .Health
+using .HealthIntegration
+using JSON3
+
 try
-    # Check Julia environment
-    using CUDA
-    using Redis
-    using LibPQ
-    using HTTP
+    # Perform comprehensive system check
+    gpu_available, db_connected, redis_connected, fs_accessible = HealthIntegration.check_system_dependencies()
     
-    # Check GPU availability
-    if !CUDA.functional()
-        println("ERROR: CUDA not functional")
-        exit(1)
-    end
+    # Get aggregated health status
+    overall_health = Health.aggregate_health()
     
-    gpu_count = length(CUDA.devices())
-    if gpu_count == 0
-        println("ERROR: No GPUs detected")
-        exit(1)
-    end
-    
-    # Check GPU memory
-    for i in 0:gpu_count-1
-        device = CuDevice(i)
-        CUDA.device!(device)
-        free_mem = CUDA.available_memory() / 1024^3  # Convert to GB
-        total_mem = CUDA.total_memory() / 1024^3
-        
-        if free_mem < 1.0  # Less than 1GB free
-            println("WARNING: GPU $i low memory: $(round(free_mem, digits=2))GB free")
-        end
-    end
-    
-    # Check database connection
-    db_url = get(ENV, "DATABASE_URL", "postgresql://hsof:hsof123@localhost:5432/hsof")
-    try
-        conn = LibPQ.Connection(db_url)
-        result = execute(conn, "SELECT 1")
-        close(conn)
-    catch e
-        println("ERROR: Database connection failed: $e")
-        exit(1)
-    end
-    
-    # Check Redis connection
-    redis_url = get(ENV, "REDIS_URL", "redis://localhost:6379/0")
-    try
-        redis_conn = Redis.RedisConnection(host="redis", port=6379)
-        Redis.ping(redis_conn)
-        Redis.disconnect(redis_conn)
-    catch e
-        println("ERROR: Redis connection failed: $e")
-        exit(1)
-    end
-    
-    # Check if main module can be loaded
-    try
-        include("src/HSOF.jl")
-        using .HSOF
-    catch e
-        println("ERROR: Failed to load HSOF module: $e")
-        exit(1)
-    end
-    
-    # Check HTTP endpoint if server is running
+    # Check if we can reach the health endpoint (if server is running)
     port = parse(Int, get(ENV, "HSOF_PORT", "8080"))
-    try
+    server_health_ok = try
+        using HTTP
         response = HTTP.get("http://localhost:$port/health", readtimeout=5)
-        if response.status != 200
-            println("ERROR: Health endpoint returned status $(response.status)")
-            exit(1)
-        end
-    catch e
-        # Server might not be HTTP-based, which is okay
-        println("INFO: HTTP health check skipped (server may not be HTTP-based)")
+        response.status == 200
+    catch
+        false  # Server might not be running, which is okay for container health check
     end
     
-    println("Health check passed: GPUs=$gpu_count, DB=OK, Redis=OK, Module=OK")
+    # Determine exit code based on health status
+    if overall_health.status == Health.CRITICAL
+        println("ERROR: System health critical - $(overall_health.message)")
+        
+        # Print detailed component status
+        components = overall_health.details["components"]
+        for (name, component) in components
+            if component["status"] != "HEALTHY"
+                println("  $name: $(component["message"])")
+            end
+        end
+        
+        exit(1)
+    elseif overall_health.status == Health.WARNING
+        println("WARNING: System health degraded - $(overall_health.message)")
+        # Warnings don't fail the health check
+    end
+    
+    # Print summary
+    println("Health check passed:")
+    println("  GPU: $(gpu_available ? "Available" : "Not Available") ($(gpu_available ? length(CUDA.devices()) : 0) devices)")
+    println("  Database: $(db_connected ? "Connected" : "Disconnected")")
+    println("  Redis: $(redis_connected ? "Connected" : "Disconnected")")
+    println("  Filesystem: $(fs_accessible ? "Accessible" : "Not Accessible")")
+    println("  Health Server: $(server_health_ok ? "Running" : "Not Running")")
+    println("  Overall Status: $(overall_health.status)")
+    
     exit(0)
     
 catch e
