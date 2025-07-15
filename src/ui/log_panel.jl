@@ -1,7 +1,6 @@
 module LogPanel
 
 using Dates
-using Match
 using Printf
 using ..ColorTheme
 
@@ -111,45 +110,130 @@ function search_logs(entries::Vector{LogEntry}, pattern::Regex)
     filter(e -> occursin(pattern, e.message) || occursin(pattern, e.source), entries)
 end
 
+# Get color for log level
+function get_log_level_color(theme::ThemeConfig, level::LogLevel)
+    if level == DEBUG
+        return get_status_color(theme, :dim)
+    elseif level == INFO
+        return get_status_color(theme, :text)
+    elseif level == WARN
+        return get_status_color(theme, :warning)
+    elseif level == ERROR
+        return get_status_color(theme, :critical)
+    else
+        return get_status_color(theme, :text)
+    end
+end
+
+# Format timestamp with color
+function format_timestamp(timestamp::DateTime, theme::ThemeConfig)
+    time_str = Dates.format(timestamp, "HH:MM:SS.sss")
+    color = get_status_color(theme, :dim)
+    return apply_theme_color(time_str, color)
+end
+
+# Format log level with color
+function format_log_level(level::LogLevel, theme::ThemeConfig)
+    level_str = @sprintf("%-5s", string(level))
+    color = get_log_level_color(theme, level)
+    return apply_theme_color(level_str, color)
+end
+
+# Highlight search matches in text
+function highlight_matches(text::String, pattern::Regex, theme::ThemeConfig)
+    # Find all matches
+    matches = collect(eachmatch(pattern, text))
+    if isempty(matches)
+        return text
+    end
+    
+    # Build highlighted string
+    result = ""
+    last_end = 1
+    accent_color = get_status_color(theme, :accent)
+    
+    for match in matches
+        # Add text before match
+        result *= text[last_end:match.offset-1]
+        # Add highlighted match
+        result *= apply_theme_color(match.match, accent_color, background=true)
+        last_end = match.offset + length(match.match)
+    end
+    
+    # Add remaining text
+    result *= text[last_end:end]
+    return result
+end
+
 # Format log entry for display
-function format_log_entry(entry::LogEntry; detailed::Bool=false, width::Int=80)
-    time_str = Dates.format(entry.timestamp, "HH:MM:SS.sss")
-    level_str = string(entry.level)
+function format_log_entry(entry::LogEntry; detailed::Bool=false, width::Int=80, 
+                         theme::ThemeConfig=create_theme(), search_pattern::Union{Nothing,Regex}=nothing)
+    time_str = format_timestamp(entry.timestamp, theme)
+    level_str = format_log_level(entry.level, theme)
     
     if detailed
         # Detailed multi-line format
         lines = String[]
-        push!(lines, "─" ^ width)
-        push!(lines, @sprintf("ID: %d | Time: %s | Level: %s", 
-                             entry.id, time_str, level_str))
+        separator_color = get_status_color(theme, :dim)
+        push!(lines, apply_theme_color("─" ^ width, separator_color))
+        
+        # Header line
+        header = @sprintf("ID: %d | Time: %s | Level: %s", entry.id, 
+                         Dates.format(entry.timestamp, "HH:MM:SS.sss"), string(entry.level))
+        push!(lines, header)
         
         if !isempty(entry.source)
-            push!(lines, @sprintf("Source: %s", entry.source))
+            source_line = @sprintf("Source: %s", entry.source)
+            if search_pattern !== nothing
+                source_line = highlight_matches(source_line, search_pattern, theme)
+            end
+            push!(lines, source_line)
         end
         
-        push!(lines, @sprintf("Message: %s", entry.message))
+        # Message with potential highlighting
+        msg_line = @sprintf("Message: %s", entry.message)
+        if search_pattern !== nothing
+            msg_line = highlight_matches(msg_line, search_pattern, theme)
+        end
+        push!(lines, msg_line)
         
         if !isempty(entry.metadata)
             push!(lines, "Metadata:")
             for (key, value) in entry.metadata
-                push!(lines, @sprintf("  %s: %s", key, string(value)))
+                meta_line = @sprintf("  %s: %s", key, string(value))
+                push!(lines, meta_line)
             end
         end
         
-        push!(lines, "─" ^ width)
+        push!(lines, apply_theme_color("─" ^ width, separator_color))
         return join(lines, "\n")
     else
         # Compact single-line format
-        source_str = isempty(entry.source) ? "" : "[$(entry.source)] "
+        source_str = ""
+        if !isempty(entry.source)
+            source_color = get_status_color(theme, :accent)
+            source_str = apply_theme_color("[$(entry.source)]", source_color) * " "
+        end
+        
         msg = entry.message
         
-        # Truncate message if too long
-        max_msg_len = width - length(time_str) - length(level_str) - length(source_str) - 10
-        if length(msg) > max_msg_len
+        # Calculate available space for message
+        # Account for ANSI escape sequences
+        raw_time_len = length(Dates.format(entry.timestamp, "HH:MM:SS.sss"))
+        raw_level_len = 5  # Fixed width
+        raw_source_len = isempty(entry.source) ? 0 : length(entry.source) + 3  # [source] 
+        max_msg_len = width - raw_time_len - raw_level_len - raw_source_len - 4  # spaces
+        
+        if length(msg) > max_msg_len && max_msg_len > 3
             msg = msg[1:max_msg_len-3] * "..."
         end
         
-        return @sprintf("%s %-5s %s%s", time_str, level_str, source_str, msg)
+        # Apply search highlighting if pattern provided
+        if search_pattern !== nothing
+            msg = highlight_matches(msg, search_pattern, theme)
+        end
+        
+        return @sprintf("%s %s %s%s", time_str, level_str, source_str, msg)
     end
 end
 
@@ -319,11 +403,15 @@ function LogPanelContent(state::LogPanelState; width::Int=80, height::Int=20)
         entry = display_items[i]
         is_selected = state.selected_index == i
         
-        line = format_log_entry(entry, detailed=false, width=width-2)
+        # Format with theme and search highlighting
+        line = format_log_entry(entry, detailed=false, width=width-2, 
+                               theme=state.theme, 
+                               search_pattern=state.highlight_matches ? state.search_pattern : nothing)
         
         # Add selection indicator
         if is_selected
-            line = "▶ " * line
+            selector_color = get_status_color(state.theme, :accent)
+            line = apply_theme_color("▶ ", selector_color) * line
         else
             line = "  " * line
         end

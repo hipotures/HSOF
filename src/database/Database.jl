@@ -28,7 +28,7 @@ export ColumnInfo, ValidationResult, ValidationConfig, MissingValueStrategy,
 
 # Progress tracking
 include("progress_tracker.jl")
-using .ProgressTracker
+using .DBProgressTracker
 export ProgressTracker, ProgressInfo, update_progress!, finish_progress!,
        estimate_eta, get_throughput, cancel_loading, format_progress,
        console_progress_callback, file_progress_callback, combined_progress_callback

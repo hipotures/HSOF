@@ -23,13 +23,15 @@ export initialize_project, validate_environment
 # Include submodules
 include("gpu/GPU.jl")
 include("database/Database.jl")
+include("ui/UI.jl")
 
 # Using and re-exporting submodules
 using .GPU
 using .Database
+using .UI
 
 # Export main components
-export GPU, Database
+export GPU, Database, UI
 export initialize_project, validate_environment, generate_sample_data
 # GPU exports
 export MCTSGPUEngine, select_features

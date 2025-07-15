@@ -1,4 +1,4 @@
-module ProgressTracker
+module DBProgressTracker
 
 using Dates
 using Printf
@@ -459,4 +459,4 @@ function combined_progress_callback(callbacks::Vector{Function})
     end
 end
 
-end # module
+end # module DBProgressTracker

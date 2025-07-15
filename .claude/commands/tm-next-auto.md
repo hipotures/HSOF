@@ -21,5 +21,3 @@
 - Nie pytaj o potwierdzenia między krokami
 - Działaj automatycznie, zakończ działanie, jeśli nie ma już zadań w taskmaster
 - W przypadku wystąpienia błędów w interfejsie ponów próbę wykonania 3 razy, nie więcej, po czym zatrzymaj wykonywanie zadań/poleceń
-
-UWaga! Zrób subtask 8.10 !!!

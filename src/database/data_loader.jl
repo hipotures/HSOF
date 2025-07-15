@@ -11,7 +11,7 @@ include("metadata_parser.jl")
 include("progress_tracker.jl")
 using .ConnectionPool
 using .MetadataParser
-using .ProgressTracker
+using .DBProgressTracker
 
 export ChunkIterator, DataChunk, LoaderConfig, create_chunk_iterator, 
        estimate_memory_usage, adaptive_chunk_size
@@ -54,7 +54,7 @@ mutable struct ChunkIterator
     total_chunks::Int
     prefetch_buffer::Channel{DataChunk}
     prefetch_task::Union{Task, Nothing}
-    progress_tracker::Union{ProgressTracker.ProgressTracker, Nothing}
+    progress_tracker::Union{DBProgressTracker.ProgressTracker, Nothing}
     closed::Bool
 end
 
@@ -112,10 +112,10 @@ function create_chunk_iterator(
     # Create progress tracker if needed
     progress_tracker = if config.show_progress || !isnothing(config.progress_callback)
         callback = isnothing(config.progress_callback) ? 
-                  ProgressTracker.console_progress_callback(80) : 
+                  DBProgressTracker.console_progress_callback(80) : 
                   config.progress_callback
         
-        ProgressTracker.ProgressTracker(
+        DBProgressTracker.ProgressTracker(
             total_rows,
             total_chunks,
             progress_callback = callback,
@@ -269,7 +269,7 @@ function load_chunk(iterator::ChunkIterator, chunk_index::Int)
             rows = size(data, 1)
             # Estimate bytes (8 bytes per numeric value + overhead)
             bytes = rows * length(columns) * 8
-            ProgressTracker.update_progress!(
+            DBProgressTracker.update_progress!(
                 iterator.progress_tracker, 
                 rows, 
                 bytes,
@@ -343,10 +343,10 @@ function Base.close(iterator::ChunkIterator)
     # Finish progress tracking
     if !isnothing(iterator.progress_tracker)
         if iterator.current_chunk == iterator.total_chunks
-            ProgressTracker.finish_progress!(iterator.progress_tracker, success=true)
+            DBProgressTracker.finish_progress!(iterator.progress_tracker, success=true)
         else
-            ProgressTracker.cancel_loading(iterator.progress_tracker)
-            ProgressTracker.finish_progress!(iterator.progress_tracker, success=false, 
+            DBProgressTracker.cancel_loading(iterator.progress_tracker)
+            DBProgressTracker.finish_progress!(iterator.progress_tracker, success=false, 
                                            message="Loading cancelled after chunk $(iterator.current_chunk)")
         end
     end
