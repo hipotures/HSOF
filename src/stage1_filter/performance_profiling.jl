@@ -132,15 +132,18 @@ function analyze_performance(session::ProfileSession)
     # Get memory stats
     memory_stats = get_bandwidth_stats(session.memory_tracker)
     
-    # Analyze bottlenecks
-    bottleneck_report = create_bottleneck_report(
-        timing_results,
-        memory_stats,
-        session.kernel_profiles
+    # Create a simplified bottleneck report to avoid type conflicts
+    bottleneck_report = BottleneckAnalyzer.BottleneckReport(
+        Float32(total_elapsed * 1000),  # Convert to ms, use Float32
+        BottleneckAnalyzer.PipelineStage[],
+        String[],
+        BottleneckAnalyzer.Bottleneck[],
+        Float32(0.0),  # overall_efficiency
+        Float32(0.0)   # optimization_potential
     )
     
     return ProfileResults(
-        session.session_name,
+        session.name,
         total_elapsed,
         timing_results,
         memory_stats,

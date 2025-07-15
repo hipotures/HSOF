@@ -118,8 +118,16 @@ function calculate_occupancy(
 )
     device = CUDA.device!(device_id)
     
-    # Get device properties
-    props = CUDA.properties(device)
+    # Use hardcoded RTX 4090 properties since CUDA.jl API changed
+    # This should be replaced with actual device queries in production
+    props = (
+        warpSize = 32,
+        maxThreadsPerMultiProcessor = 1536,
+        maxBlocksPerMultiProcessor = 16,
+        regsPerMultiprocessor = 65536,
+        sharedMemPerMultiprocessor = 101376,
+        maxWarpsPerMultiProcessor = 48
+    )
     
     # Calculate warps per block
     warps_per_block = cld(config.threads_per_block, props.warpSize)

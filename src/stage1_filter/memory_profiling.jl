@@ -262,13 +262,13 @@ end
 Memory tracking hooks for CuArray
 """
 function track_cuarray_allocation(tracker::MemoryTracker, arr::CuArray)
-    ptr = pointer(arr)
+    ptr = reinterpret(Ptr{Nothing}, pointer(arr))  # Convert CuPtr to Ptr{Nothing}
     size = sizeof(arr)
     track_allocation!(tracker, ptr, size)
 end
 
 function track_cuarray_deallocation(tracker::MemoryTracker, arr::CuArray)
-    ptr = pointer(arr)
+    ptr = reinterpret(Ptr{Nothing}, pointer(arr))  # Convert CuPtr to Ptr{Nothing}
     track_deallocation!(tracker, ptr)
 end
 
