@@ -1436,7 +1436,7 @@
               2
             ],
             "details": "Implement multi-level progress bars for overall job and current stage. Create ETA calculator using rolling average of processing speed. Build stage indicator showing current MCTS phase (selection/expansion/simulation/backprop). Add progress history graph showing speed variations. Implement pause/resume aware time calculations. Create progress persistence for recovery after interruption.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -1763,7 +1763,7 @@
     ],
     "metadata": {
       "created": "2025-07-14T16:41:00.071Z",
-      "updated": "2025-07-15T13:00:31.358Z",
+      "updated": "2025-07-15T13:08:46.740Z",
       "description": "Tasks for master context"
     }
   }
