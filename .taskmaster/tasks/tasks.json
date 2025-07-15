@@ -1325,7 +1325,7 @@
               5
             ],
             "details": "Implement paired t-tests on CV fold performances with Bonferroni correction. Create Wilcoxon signed-rank test for non-parametric comparisons. Add McNemar's test for classification model comparisons. Implement confidence interval calculation for performance metrics. Create p-value adjustment for multiple hypothesis testing. Add effect size calculation (Cohen's d) for practical significance. Build statistical report generator with interpretation guidelines.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -1763,7 +1763,7 @@
     ],
     "metadata": {
       "created": "2025-07-14T16:41:00.071Z",
-      "updated": "2025-07-15T11:02:57.776Z",
+      "updated": "2025-07-15T11:16:55.601Z",
       "description": "Tasks for master context"
     }
   }
