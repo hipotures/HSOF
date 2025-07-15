@@ -1120,7 +1120,7 @@
               3
             ],
             "details": "Create GPU utilization monitoring sampling usage every 100ms. Implement work stealing allowing idle GPU to take trees from overloaded GPU. Build tree migration protocol safely moving trees between GPUs mid-execution. Design load prediction model estimating tree computational requirements. Implement adaptive batch sizing adjusting tree updates based on GPU capacity.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -1131,7 +1131,7 @@
               7
             ],
             "details": "Create convergence metrics tracking feature selection stability over iterations. Implement sliding window analysis detecting when selections stop changing. Build early stopping criteria based on consensus strength and iteration count. Design adaptive convergence thresholds adjusting to problem difficulty. Implement convergence visualization showing selection evolution over time.",
-            "status": "pending",
+            "status": "in-progress",
             "testStrategy": ""
           },
           {
@@ -1763,7 +1763,7 @@
     ],
     "metadata": {
       "created": "2025-07-14T16:41:00.071Z",
-      "updated": "2025-07-15T06:20:23.977Z",
+      "updated": "2025-07-15T06:30:30.207Z",
       "description": "Tasks for master context"
     }
   }
