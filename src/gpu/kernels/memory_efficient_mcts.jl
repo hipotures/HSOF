@@ -12,6 +12,65 @@ using ..SharedFeatureStorage
 using ..LazyExpansion
 
 """
+Configuration for individual trees in the ensemble.
+"""
+struct TreeConfig
+    tree_id::Int32
+    exploration_constant::Float32
+    feature_subset_ratio::Float32
+    random_seed::UInt32
+    virtual_loss::Int32
+    max_depth::UInt8
+    
+    function TreeConfig(tree_id::Int32)
+        new(
+            tree_id,
+            0.5f0 + 1.5f0 * rand(Float32),  # Random exploration constant 0.5-2.0
+            0.8f0,                          # Use 80% of features
+            UInt32(tree_id * 12345),        # Deterministic but different seed
+            10,                             # Virtual loss
+            UInt8(50)                       # Max depth
+        )
+    end
+end
+
+"""
+Memory usage statistics for the ensemble.
+"""
+mutable struct MemoryStatistics
+    # Compressed node storage
+    compressed_nodes_mb::Float64
+    
+    # Shared feature storage
+    feature_pool_mb::Float64
+    
+    # Lazy expansion contexts
+    expansion_contexts_mb::Float64
+    
+    # Total memory usage
+    total_mb::Float64
+    
+    # Memory efficiency metrics
+    compression_ratio::Float64
+    sharing_efficiency::Float64
+    lazy_savings_mb::Float64
+    
+    # Device memory info
+    device_total_mb::Float64
+    device_free_mb::Float64
+    
+    function MemoryStatistics(device::CuDevice)
+        CUDA.device!(device) do
+            # Get device memory info
+            device_total_mb = CUDA.total_memory(device) / (1024.0^2)
+            device_free_mb = CUDA.available_memory(device) / (1024.0^2)
+            
+            new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, device_total_mb, device_free_mb)
+        end
+    end
+end
+
+"""
 Memory-efficient MCTS engine using compressed nodes, shared feature storage,
 and lazy expansion for 50 trees per GPU with minimal memory footprint.
 """
@@ -70,65 +129,6 @@ struct MemoryEfficientTreeEnsemble
             
             new(tree, feature_pool, expansion_manager, tree_configs, memory_stats,
                 device, max_trees, max_nodes_per_tree)
-        end
-    end
-end
-
-"""
-Configuration for individual trees in the ensemble.
-"""
-struct TreeConfig
-    tree_id::Int32
-    exploration_constant::Float32
-    feature_subset_ratio::Float32
-    random_seed::UInt32
-    virtual_loss::Int32
-    max_depth::UInt8
-    
-    function TreeConfig(tree_id::Int32)
-        new(
-            tree_id,
-            0.5f0 + 1.5f0 * rand(Float32),  # Random exploration constant 0.5-2.0
-            0.8f0,                          # Use 80% of features
-            UInt32(tree_id * 12345),        # Deterministic but different seed
-            10,                             # Virtual loss
-            UInt8(50)                       # Max depth
-        )
-    end
-end
-
-"""
-Memory usage statistics for the ensemble.
-"""
-mutable struct MemoryStatistics
-    # Compressed node storage
-    compressed_nodes_mb::Float64
-    
-    # Shared feature storage
-    feature_pool_mb::Float64
-    
-    # Lazy expansion contexts
-    expansion_contexts_mb::Float64
-    
-    # Total memory usage
-    total_mb::Float64
-    
-    # Memory efficiency metrics
-    compression_ratio::Float64
-    sharing_efficiency::Float64
-    lazy_savings_mb::Float64
-    
-    # Device memory info
-    device_total_mb::Float64
-    device_free_mb::Float64
-    
-    function MemoryStatistics(device::CuDevice)
-        CUDA.device!(device) do
-            # Get device memory info
-            device_total_mb = CUDA.total_memory(device) / (1024.0^2)
-            device_free_mb = CUDA.available_memory(device) / (1024.0^2)
-            
-            new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, device_total_mb, device_free_mb)
         end
     end
 end

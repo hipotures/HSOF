@@ -546,4 +546,14 @@ function get_tree_summary(engine::MCTSGPUEngine)
     return engine.last_stats_summary
 end
 
+# Export main types and functions
+export MCTSGPUEngine, TreeStatistics
+export initialize!, start!, stop!, select_features, get_best_features
+export update_statistics!, get_statistics, get_performance_report, export_performance_metrics
+export collect_tree_stats!, get_tree_summary
+
+# Export from MemoryEfficientMCTS module
+export MemoryEfficientTreeEnsemble, TreeConfig, MemoryStatistics
+export initialize_ensemble!, run_ensemble_mcts!, get_best_features_ensemble, get_ensemble_statistics
+
 end # module
