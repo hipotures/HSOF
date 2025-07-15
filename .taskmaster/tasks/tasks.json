@@ -1336,7 +1336,7 @@
               6
             ],
             "details": "Implement weighted ranking system combining SHAP, permutation importance, and interaction scores. Create Pareto-optimal feature selection considering accuracy vs feature count. Build incremental feature selection with early stopping. Implement ensemble voting across different models for robust selection. Add constraint handling for must-include/exclude features. Create feature stability analysis across CV folds. Generate detailed selection report with justifications.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -1763,7 +1763,7 @@
     ],
     "metadata": {
       "created": "2025-07-14T16:41:00.071Z",
-      "updated": "2025-07-15T11:16:55.601Z",
+      "updated": "2025-07-15T11:31:51.550Z",
       "description": "Tasks for master context"
     }
   }
