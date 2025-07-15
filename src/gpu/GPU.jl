@@ -52,6 +52,10 @@ using .DynamicRebalancing
 include("result_aggregation.jl")
 using .ResultAggregation
 
+# Scaling Efficiency Validation
+include("scaling_efficiency.jl")
+using .ScalingEfficiency
+
 # GPU Management exports
 export initialize_devices, get_device_info, validate_gpu_environment
 export GPUManager, DeviceManager, StreamManager, MemoryManager
@@ -133,6 +137,12 @@ export create_result_aggregator, submit_tree_result!, aggregate_results
 export get_ensemble_consensus, get_feature_rankings, get_aggregated_results
 export clear_results!, reset_cache!, get_cache_stats
 export set_consensus_threshold!, enable_caching!
+
+# Scaling Efficiency exports
+export ScalingBenchmark, BenchmarkConfig, ScalingMetrics, BenchmarkResult
+export create_benchmark, run_single_gpu_baseline, run_multi_gpu_benchmark
+export calculate_scaling_efficiency, identify_bottlenecks
+export run_scaling_experiments, generate_efficiency_report
 
 # Module initialization
 function __init__()
