@@ -11,6 +11,7 @@ include("console_dashboard.jl")
 include("gpu_dashboard_integration.jl")
 include("terminal_compat.jl")
 include("log_panel.jl")
+include("gpu_status_panel.jl")
 
 # Export all public APIs
 using .ColorTheme
@@ -23,11 +24,12 @@ using .ConsoleDashboard
 using .GPUDashboardIntegration
 using .TerminalCompat
 using .LogPanel
+using .GPUStatusPanel
 
 # Re-export main components
 export ColorTheme, SparklineGraph, GPUMonitor, KeyboardHandler
 export ProgressTracker, RealtimeUpdate, ConsoleDashboard
-export GPUDashboardIntegration, TerminalCompat, LogPanel
+export GPUDashboardIntegration, TerminalCompat, LogPanel, GPUStatusPanel
 
 # Re-export key functions from each module
 # From ColorTheme
@@ -54,10 +56,14 @@ export create_key_handler, set_context!, get_help_text
 export QUIT_KEY, PAUSE_KEY, HELP_KEY, ESC_KEY
 
 # From ProgressTracker
-export ProgressState, ProgressEstimator, StageProgress
-export update_progress!, calculate_eta, format_progress
-export get_progress_bar, get_stage_indicator, reset_progress!
-export pause_progress!, resume_progress!, is_complete
+export ProgressState, Tracker, MCTSPhase
+export create_progress_tracker, update_progress!, add_stage!
+export get_eta, get_progress_percentage, get_current_stage
+export pause_tracker!, resume_tracker!, is_paused
+export save_progress, load_progress
+export get_progress_bar, get_stage_indicator, get_speed_stats
+export reset_tracker!, set_total_items!, complete_stage!
+export get_history, get_formatted_eta, get_phase_name, get_phase_symbol
 
 # From RealtimeUpdate
 export UpdateManager, UpdateBuffer, PanelUpdate
@@ -85,5 +91,16 @@ export save_cursor, restore_cursor, hide_cursor, show_cursor
 export LogLevel, LogEntry, CircularLogBuffer, LogPanelState, LogPanelContent
 export add_log!, filter_logs, search_logs, export_logs, format_log_entry
 export DEBUG, INFO, WARN, ERROR
+export get_entries, group_repeated_messages, get_log_level_color, format_timestamp
+export format_log_level, highlight_matches
+
+# From GPUStatusPanel
+export GPUPanelState, GPUPanelContent
+export create_gpu_panel, update_gpu_panel!
+export render_gpu_status, render_utilization_bar
+export render_memory_chart, render_temperature_gauge
+export render_power_display, render_clock_speeds
+export render_gpu_comparison, get_activity_symbol
+export format_gpu_stats, check_thermal_throttling
 
 end # module UI

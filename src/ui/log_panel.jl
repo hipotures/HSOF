@@ -7,6 +7,8 @@ using ..ColorTheme
 export LogLevel, LogEntry, CircularLogBuffer, LogPanelState, LogPanelContent
 export add_log!, filter_logs, search_logs, export_logs, format_log_entry
 export DEBUG, INFO, WARN, ERROR
+export get_entries, group_repeated_messages, get_log_level_color, format_timestamp
+export format_log_level, highlight_matches
 
 # Log level enumeration
 @enum LogLevel begin
@@ -156,7 +158,7 @@ function highlight_matches(text::String, pattern::Regex, theme::ThemeConfig)
         # Add text before match
         result *= text[last_end:match.offset-1]
         # Add highlighted match
-        result *= apply_theme_color(match.match, accent_color, background=true)
+        result *= apply_theme_color(string(match.match), accent_color, background=true)
         last_end = match.offset + length(match.match)
     end
     
@@ -383,7 +385,7 @@ function LogPanelContent(state::LogPanelState; width::Int=80, height::Int=20)
         push!(header_parts, "Search: $(state.search_pattern.pattern)")
     end
     push!(lines, join(header_parts, " | "))
-    push!(lines, "─" * width)
+    push!(lines, "─" ^ width)
     
     # Calculate visible area
     content_height = height - 3  # Header + separator + footer
