@@ -1,0 +1,134 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hsof-config
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: configuration
+data:
+  # Application Configuration
+  JULIA_NUM_THREADS: "8"
+  JULIA_CUDA_HARD_MEMORY_LIMIT: "80%"
+  HSOF_LOG_LEVEL: "INFO"
+  HSOF_ENV: "production"
+  
+  # GPU Configuration
+  CUDA_VISIBLE_DEVICES: "0,1"
+  NVIDIA_VISIBLE_DEVICES: "all"
+  NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+  
+  # Performance Configuration
+  HSOF_STAGE1_TIMEOUT: "30"
+  HSOF_STAGE2_MAX_ITERATIONS: "10000"
+  HSOF_STAGE3_CV_FOLDS: "5"
+  HSOF_METAMODEL_BATCH_SIZE: "1000"
+  
+  # Monitoring Configuration
+  HSOF_METRICS_PORT: "9090"
+  HSOF_HEALTH_PORT: "8080"
+  HSOF_PROMETHEUS_ENABLED: "true"
+  
+  # Database Configuration
+  DATABASE_POOL_SIZE: "10"
+  DATABASE_TIMEOUT: "30"
+  REDIS_POOL_SIZE: "20"
+  
+  # Memory Configuration
+  HSOF_MAX_MEMORY_GB: "32"
+  HSOF_GPU_MEMORY_FRACTION: "0.8"
+  
+  # Checkpoint Configuration
+  HSOF_CHECKPOINT_INTERVAL: "300"
+  HSOF_CHECKPOINT_RETENTION: "5"
+  
+  # Feature Selection Configuration
+  HSOF_MAX_FEATURES_INPUT: "5000"
+  HSOF_TARGET_FEATURES_STAGE1: "500"
+  HSOF_TARGET_FEATURES_STAGE2: "50"
+  HSOF_TARGET_FEATURES_FINAL: "15"
+  
+  # Compute Configuration
+  HSOF_PARALLEL_WORKERS: "4"
+  HSOF_BATCH_PROCESSING: "true"
+  
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hsof-gpu-config
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: gpu-configuration
+data:
+  gpu_config.toml: |
+    [gpu]
+    device_count = 2
+    memory_pool_size_gb = 8
+    memory_fraction = 0.8
+    enable_peer_access = true
+    
+    [gpu.devices]
+    [gpu.devices.0]
+    name = "RTX 4090"
+    memory_gb = 24
+    compute_capability = "8.9"
+    
+    [gpu.devices.1] 
+    name = "RTX 4090"
+    memory_gb = 24
+    compute_capability = "8.9"
+    
+    [performance]
+    target_utilization = 0.85
+    memory_warning_threshold = 0.9
+    memory_critical_threshold = 0.95
+    temperature_warning = 80
+    temperature_critical = 90
+    
+    [mcts]
+    trees_per_gpu = 50
+    max_tree_depth = 20
+    exploration_constant = 1.414
+    parallel_simulations = 64
+    
+    [metamodel]
+    batch_size = 1000
+    inference_timeout_ms = 100
+    cache_size_mb = 512
+    
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hsof-logging-config
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: logging-configuration
+data:
+  logging.toml: |
+    [logging]
+    level = "INFO"
+    format = "structured"
+    output = "console"
+    
+    [logging.modules]
+    "HSOF.GPU" = "DEBUG"
+    "HSOF.MCTS" = "INFO"
+    "HSOF.Metamodel" = "INFO"
+    "HSOF.Health" = "WARN"
+    "HSOF.Prometheus" = "WARN"
+    
+    [logging.structured]
+    timestamp = true
+    level = true
+    module = true
+    function = true
+    correlation_id = true
+    
+    [logging.performance]
+    enable_timing = true
+    enable_memory_tracking = true
+    sample_rate = 0.1

@@ -1,0 +1,54 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: hsof-base
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Base resources
+resources:
+- namespace.yaml
+- configmap.yaml
+- persistentvolume.yaml
+- deployment.yaml
+- service.yaml
+- hpa.yaml
+- pdb.yaml
+- networkpolicy.yaml
+
+# Common labels for all resources
+commonLabels:
+  app.kubernetes.io/name: hsof
+  app.kubernetes.io/part-of: hybrid-search-optimal-features
+  app.kubernetes.io/managed-by: kustomize
+
+# Common annotations
+commonAnnotations:
+  config.kubernetes.io/origin: |
+    path: k8s/base/kustomization.yaml
+  documentation: "HSOF - Hybrid Search for Optimal Features Kubernetes deployment"
+
+# Namespace for all resources
+namespace: hsof
+
+# Image transformations
+images:
+- name: hsof
+  newTag: latest
+
+# Resource naming
+namePrefix: ""
+nameSuffix: ""
+
+# ConfigMap and Secret generators (if needed)
+configMapGenerator: []
+secretGenerator: []
+
+# Patches (can be overridden in overlays)
+patches: []
+
+# Replica count for development (can be overridden)
+replicas:
+- name: hsof-main
+  count: 1

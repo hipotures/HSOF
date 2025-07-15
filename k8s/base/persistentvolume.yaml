@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hsof-model-storage
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: model-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hsof-checkpoint-storage
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: checkpoint-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hsof-data-storage
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: data-storage
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 200Gi
+  storageClassName: shared-storage
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hsof-logs-storage
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: logs-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard

@@ -1,0 +1,267 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hsof-main
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: main-application
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hsof
+      app.kubernetes.io/component: main-application
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hsof
+        app.kubernetes.io/component: main-application
+        app.kubernetes.io/version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: hsof-service-account
+      restartPolicy: Always
+      
+      # Node selection and affinity rules
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: nvidia.com/gpu.present
+                operator: In
+                values: ["true"]
+              - key: nvidia.com/gpu.count
+                operator: In
+                values: ["2", "4", "8"]
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-type
+                operator: In
+                values: ["gpu-optimized"]
+          - weight: 50
+            preference:
+              matchExpressions:
+              - key: nvidia.com/gpu.memory
+                operator: In
+                values: ["24576"] # 24GB memory preference
+        
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values: ["hsof"]
+              topologyKey: kubernetes.io/hostname
+      
+      # Tolerations for GPU nodes
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+      - key: gpu-node
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+      
+      # Security context
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      
+      # Init container for setup
+      initContainers:
+      - name: setup
+        image: hsof:latest
+        command: ["julia", "-e", "include(\"scripts/validate_environment.jl\")"]
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        env:
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0,1"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+          readOnly: true
+        - name: logs-storage
+          mountPath: /app/logs
+      
+      containers:
+      - name: hsof-main
+        image: hsof:latest
+        imagePullPolicy: Always
+        
+        # Resource requirements with GPU allocation
+        resources:
+          requests:
+            memory: "16Gi"
+            cpu: "4"
+            nvidia.com/gpu: "2"
+          limits:
+            memory: "32Gi"
+            cpu: "8"
+            nvidia.com/gpu: "2"
+        
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: health
+            scheme: HTTP
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: health
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        
+        startupProbe:
+          httpGet:
+            path: /health
+            port: health
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
+          successThreshold: 1
+        
+        # Port configuration
+        ports:
+        - name: api
+          containerPort: 8000
+          protocol: TCP
+        - name: health
+          containerPort: 8080
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        
+        # Environment configuration
+        envFrom:
+        - configMapRef:
+            name: hsof-config
+        
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        
+        # Volume mounts
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+          readOnly: true
+        - name: gpu-config-volume
+          mountPath: /app/config/gpu
+          readOnly: true
+        - name: logging-config-volume
+          mountPath: /app/config/logging
+          readOnly: true
+        - name: model-storage
+          mountPath: /app/models
+        - name: checkpoint-storage
+          mountPath: /app/checkpoints
+        - name: data-storage
+          mountPath: /app/data
+        - name: logs-storage
+          mountPath: /app/logs
+        - name: tmp-volume
+          mountPath: /tmp
+        
+        # Security context for container
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+      
+      # Volumes configuration
+      volumes:
+      - name: config-volume
+        configMap:
+          name: hsof-config
+          defaultMode: 0644
+      - name: gpu-config-volume
+        configMap:
+          name: hsof-gpu-config
+          defaultMode: 0644
+      - name: logging-config-volume
+        configMap:
+          name: hsof-logging-config
+          defaultMode: 0644
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: hsof-model-storage
+      - name: checkpoint-storage
+        persistentVolumeClaim:
+          claimName: hsof-checkpoint-storage
+      - name: data-storage
+        persistentVolumeClaim:
+          claimName: hsof-data-storage
+      - name: logs-storage
+        persistentVolumeClaim:
+          claimName: hsof-logs-storage
+      - name: tmp-volume
+        emptyDir:
+          sizeLimit: 10Gi
+      
+      # DNS configuration
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "2"
+        - name: edns0

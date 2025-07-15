@@ -1,0 +1,83 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hsof-hpa
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: autoscaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hsof-main
+  minReplicas: 1
+  maxReplicas: 3
+  
+  # Scaling behavior configuration
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Max
+  
+  # Metrics for scaling decisions
+  metrics:
+  # CPU utilization
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  
+  # Memory utilization
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  
+  # Custom metrics for GPU utilization (requires custom metrics API)
+  - type: Pods
+    pods:
+      metric:
+        name: gpu_utilization_percent
+      target:
+        type: AverageValue
+        averageValue: "85"
+  
+  # Queue depth metric (custom metric)
+  - type: Pods
+    pods:
+      metric:
+        name: hsof_pipeline_queue_depth
+      target:
+        type: AverageValue
+        averageValue: "10"
+  
+  # Feature processing rate (requests per second)
+  - type: Pods
+    pods:
+      metric:
+        name: hsof_features_processed_per_second
+      target:
+        type: AverageValue
+        averageValue: "1000"

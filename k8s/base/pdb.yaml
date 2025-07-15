@@ -1,0 +1,22 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hsof-pdb
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: disruption-budget
+spec:
+  # Ensure at least 1 pod is always available during updates
+  minAvailable: 1
+  
+  # Alternative: Allow max 50% of pods to be unavailable
+  # maxUnavailable: 50%
+  
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hsof
+      app.kubernetes.io/component: main-application
+  
+  # Unhealthy pod eviction policy
+  unhealthyPodEvictionPolicy: AlwaysAllow

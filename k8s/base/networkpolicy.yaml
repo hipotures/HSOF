@@ -1,0 +1,148 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hsof-network-policy
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: network-security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: hsof
+  
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  # Ingress rules
+  ingress:
+  # Allow traffic from other HSOF pods (for clustering)
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: hsof
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 9090
+  
+  # Allow traffic from monitoring namespace (Prometheus)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9090
+  
+  # Allow traffic from ingress controllers
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 8080
+  
+  # Allow traffic from load balancer services
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 8080
+  
+  # Egress rules
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  
+  # Allow HTTPS outbound (for model downloads, API calls)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  
+  # Allow HTTP outbound (for registries, etc.)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 80
+  
+  # Allow communication with database services
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: database
+    ports:
+    - protocol: TCP
+      port: 5432  # PostgreSQL
+    - protocol: TCP
+      port: 6379  # Redis
+  
+  # Allow communication between HSOF pods
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: hsof
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 9090
+
+---
+# Additional network policy for database access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hsof-database-access
+  namespace: hsof
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: database-security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: hsof
+  
+  policyTypes:
+  - Egress
+  
+  egress:
+  # PostgreSQL access
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: database
+      podSelector:
+        matchLabels:
+          app: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+  
+  # Redis access  
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: database
+      podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
