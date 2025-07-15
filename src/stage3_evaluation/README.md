@@ -243,10 +243,65 @@ include("test/stage3_evaluation/test_mlj_infrastructure.jl")
 - MLJLIGHTGBMInterface.jl: LightGBM integration
 - MLJModelInterface.jl: Model interface definitions
 
+### 5. Feature Importance Analysis (`feature_importance.jl`)
+
+Comprehensive feature importance analysis using multiple methods:
+
+```julia
+# SHAP values calculation
+shap_calc = SHAPCalculator(model_type=:xgboost, n_samples=500)
+shap_result = calculate_shap_values(shap_calc, fitted_model, machine, X, y,
+                                  feature_names=feature_names)
+
+# Permutation importance
+perm_calc = PermutationImportance(n_repeats=10, n_jobs=4)
+perm_result = calculate_permutation_importance(perm_calc, fitted_model, machine, X, y)
+
+# Combine multiple methods
+combined_result = combine_importance_methods(shap_result, perm_result, 
+                                           weights=(0.6, 0.4))
+
+# Export results
+export_importance_plot(combined_result, "importance_ranking.csv", top_k=20)
+```
+
+### 6. Feature Interactions Analysis (`feature_interactions.jl`)
+
+Advanced pairwise feature interaction detection:
+
+```julia
+# Create interaction calculator
+calc = InteractionCalculator(
+    method=:all,  # Use all methods
+    n_samples=300,
+    categorical_features=[5, 6],
+    n_jobs=4
+)
+
+# Calculate all pairwise interactions
+interaction_matrix = calculate_all_interactions(
+    calc, fitted_model, machine, X, y,
+    feature_names=feature_names,
+    threshold=0.05
+)
+
+# Get top interactions
+top_interactions = get_significant_interactions(interaction_matrix, top_k=10)
+
+# Export interaction heatmap
+export_interaction_heatmap(interaction_matrix, "interactions.csv")
+```
+
+Key interaction detection methods:
+- **H-statistic**: Measures variance explained by interactions
+- **Mutual Information**: Captures linear and non-linear dependencies
+- **Partial Dependence**: Visualizes interaction effects on predictions
+- **Performance Degradation**: Reveals synergistic feature pairs
+
 ## Future Enhancements
 
-1. **Feature Importance Extraction**: Direct access to model-specific importance scores
-2. **Hyperparameter Optimization**: Automated tuning with MLJ's tuning interface
-3. **Custom Metrics**: Support for domain-specific evaluation metrics
-4. **GPU Acceleration**: XGBoost and LightGBM GPU support
-5. **Distributed Training**: Multi-node training for large datasets
+1. **Hyperparameter Optimization**: Automated tuning with MLJ's tuning interface
+2. **Custom Metrics**: Support for domain-specific evaluation metrics
+3. **GPU Acceleration**: XGBoost and LightGBM GPU support
+4. **Distributed Training**: Multi-node training for large datasets
+5. **Deep Learning Integration**: Support for neural network models
