@@ -1,0 +1,265 @@
+groups:
+  - name: hsof_gpu_alerts
+    rules:
+      - alert: GPUUtilizationLow
+        expr: avg(hsof_gpu_utilization_percent) < 20
+        for: 5m
+        labels:
+          severity: warning
+          component: gpu
+        annotations:
+          summary: "HSOF GPU utilization is critically low"
+          description: "GPU utilization has been below 20% for more than 5 minutes. Current value: {{ $value }}%"
+          runbook_url: "https://internal-docs/runbooks/gpu-utilization-low"
+
+      - alert: GPUUtilizationHigh
+        expr: avg(hsof_gpu_utilization_percent) > 95
+        for: 2m
+        labels:
+          severity: warning
+          component: gpu
+        annotations:
+          summary: "HSOF GPU utilization is critically high"
+          description: "GPU utilization has been above 95% for more than 2 minutes. Current value: {{ $value }}%. Risk of thermal throttling."
+          runbook_url: "https://internal-docs/runbooks/gpu-utilization-high"
+
+      - alert: GPUMemoryExhaustion
+        expr: (hsof_gpu_memory_used_bytes / hsof_gpu_memory_total_bytes) * 100 > 90
+        for: 1m
+        labels:
+          severity: critical
+          component: gpu
+        annotations:
+          summary: "HSOF GPU memory nearly exhausted"
+          description: "GPU {{ $labels.gpu_id }} memory usage is above 90%. Current usage: {{ $value }}%"
+          runbook_url: "https://internal-docs/runbooks/gpu-memory-exhaustion"
+
+      - alert: GPUTemperatureHigh
+        expr: hsof_gpu_temperature_celsius > 85
+        for: 2m
+        labels:
+          severity: critical
+          component: gpu
+        annotations:
+          summary: "HSOF GPU temperature critically high"
+          description: "GPU {{ $labels.gpu_id }} temperature is {{ $value }}°C, exceeding safe operating threshold"
+          runbook_url: "https://internal-docs/runbooks/gpu-temperature-high"
+
+      - alert: GPUDown
+        expr: up{job="hsof-gpu-exporter"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: gpu
+        annotations:
+          summary: "HSOF GPU monitoring is down"
+          description: "GPU monitoring endpoint is unreachable"
+          runbook_url: "https://internal-docs/runbooks/gpu-monitoring-down"
+
+  - name: hsof_pipeline_alerts
+    rules:
+      - alert: PipelineStageTimeout
+        expr: hsof_stage_duration_seconds > 300
+        for: 0s
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "HSOF pipeline stage taking too long"
+          description: "Stage {{ $labels.stage }} has been running for {{ $value }} seconds, exceeding normal duration"
+          runbook_url: "https://internal-docs/runbooks/pipeline-stage-timeout"
+
+      - alert: FeatureSelectionQualityLow
+        expr: hsof_selection_quality_score < 0.6
+        for: 1m
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "HSOF feature selection quality is low"
+          description: "Feature selection quality score is {{ $value }}, below acceptable threshold of 0.6"
+          runbook_url: "https://internal-docs/runbooks/quality-low"
+
+      - alert: ModelInferenceLatencyHigh
+        expr: histogram_quantile(0.95, rate(hsof_metamodel_inference_latency_seconds_bucket[5m])) > 0.005
+        for: 3m
+        labels:
+          severity: warning
+          component: metamodel
+        annotations:
+          summary: "HSOF model inference latency is high"
+          description: "95th percentile inference latency is {{ $value }}s, exceeding 5ms threshold"
+          runbook_url: "https://internal-docs/runbooks/inference-latency-high"
+
+      - alert: PipelineErrorRate
+        expr: rate(hsof_errors_total[5m]) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+          component: pipeline
+        annotations:
+          summary: "HSOF pipeline error rate is high"
+          description: "Pipeline error rate is {{ $value }}%, exceeding 5% threshold"
+          runbook_url: "https://internal-docs/runbooks/error-rate-high"
+
+      - alert: FeatureProcessingStalled
+        expr: increase(hsof_features_processed_total[10m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: pipeline
+        annotations:
+          summary: "HSOF feature processing appears stalled"
+          description: "No features have been processed in the last 10 minutes"
+          runbook_url: "https://internal-docs/runbooks/processing-stalled"
+
+  - name: hsof_system_alerts
+    rules:
+      - alert: SystemDown
+        expr: up{job="hsof-main"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "HSOF system is down"
+          description: "Main HSOF service is unreachable"
+          runbook_url: "https://internal-docs/runbooks/system-down"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "HSOF system memory usage is high"
+          description: "System memory usage is {{ $value }}%, approaching critical levels"
+          runbook_url: "https://internal-docs/runbooks/memory-usage-high"
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "HSOF system CPU usage is high"
+          description: "System CPU usage is {{ $value }}% on {{ $labels.instance }}"
+          runbook_url: "https://internal-docs/runbooks/cpu-usage-high"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+        for: 1m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "HSOF system disk space is critically low"
+          description: "Disk space on {{ $labels.instance }} is {{ $value }}% full"
+          runbook_url: "https://internal-docs/runbooks/disk-space-low"
+
+  - name: hsof_backup_alerts
+    rules:
+      - alert: BackupFailed
+        expr: hsof_backup_failed_total > 0
+        for: 0s
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: "HSOF backup has failed"
+          description: "{{ $value }} backup operations have failed"
+          runbook_url: "https://internal-docs/runbooks/backup-failed"
+
+      - alert: BackupOverdue
+        expr: time() - hsof_last_successful_backup_timestamp > 86400
+        for: 0s
+        labels:
+          severity: warning
+          component: backup
+        annotations:
+          summary: "HSOF backup is overdue"
+          description: "Last successful backup was {{ $value }} seconds ago (>24 hours)"
+          runbook_url: "https://internal-docs/runbooks/backup-overdue"
+
+      - alert: BackupStorageSpaceLow
+        expr: (hsof_backup_storage_used_bytes / hsof_backup_storage_total_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: backup
+        annotations:
+          summary: "HSOF backup storage space is low"
+          description: "Backup storage is {{ $value }}% full"
+          runbook_url: "https://internal-docs/runbooks/backup-storage-low"
+
+  - name: hsof_performance_alerts
+    rules:
+      - alert: ThroughputLow
+        expr: rate(hsof_datasets_processed_total[10m]) * 600 < 1
+        for: 10m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "HSOF dataset processing throughput is low"
+          description: "Dataset processing rate is {{ $value }} datasets per 10 minutes, below expected performance"
+          runbook_url: "https://internal-docs/runbooks/throughput-low"
+
+      - alert: FeatureReductionRatioAnomaly
+        expr: abs(hsof_feature_reduction_ratio - 0.1) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "HSOF feature reduction ratio is anomalous"
+          description: "Feature reduction ratio is {{ $value }}, significantly different from expected ~0.1"
+          runbook_url: "https://internal-docs/runbooks/reduction-ratio-anomaly"
+
+      - alert: CostBudgetExceeded
+        expr: increase(hsof_compute_cost_dollars_total[1h]) > 10
+        for: 0s
+        labels:
+          severity: warning
+          component: cost
+        annotations:
+          summary: "HSOF hourly compute cost budget exceeded"
+          description: "Compute costs in the last hour: ${{ $value }}, exceeding $10 budget"
+          runbook_url: "https://internal-docs/runbooks/cost-budget-exceeded"
+
+  - name: hsof_availability_alerts
+    rules:
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(hsof_request_duration_seconds_bucket[5m])) > 30
+        for: 3m
+        labels:
+          severity: warning
+          component: availability
+        annotations:
+          summary: "HSOF request latency is high"
+          description: "95th percentile request latency is {{ $value }}s, exceeding 30s SLA"
+          runbook_url: "https://internal-docs/runbooks/high-latency"
+
+      - alert: ErrorBudgetExhausted
+        expr: (rate(hsof_errors_total[1h]) / rate(hsof_requests_total[1h])) * 100 > 1
+        for: 15m
+        labels:
+          severity: critical
+          component: availability
+        annotations:
+          summary: "HSOF error budget is exhausted"
+          description: "Error rate {{ $value }}% exceeds 1% SLO over 15 minutes"
+          runbook_url: "https://internal-docs/runbooks/error-budget-exhausted"
+
+      - alert: HealthCheckFailing
+        expr: hsof_health_check_status != 1
+        for: 1m
+        labels:
+          severity: critical
+          component: availability
+        annotations:
+          summary: "HSOF health check is failing"
+          description: "Health check status: {{ $value }} (1=healthy, 0=unhealthy)"
+          runbook_url: "https://internal-docs/runbooks/health-check-failing"

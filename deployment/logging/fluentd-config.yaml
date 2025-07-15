@@ -1,0 +1,299 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluentd-config
+  namespace: hsof
+data:
+  fluent.conf: |
+    # Input from Kubernetes pods
+    <source>
+      @type tail
+      path /var/log/containers/hsof-*.log
+      pos_file /var/log/fluentd-hsof.log.pos
+      tag hsof.containers.*
+      read_from_head true
+      <parse>
+        @type json
+        time_format %Y-%m-%dT%H:%M:%S.%NZ
+        time_key time
+        keep_time_key true
+      </parse>
+    </source>
+
+    # Input from HSOF application logs
+    <source>
+      @type forward
+      port 24224
+      bind 0.0.0.0
+      tag hsof.app
+    </source>
+
+    # Input from GPU monitoring
+    <source>
+      @type tail
+      path /var/log/hsof/gpu-*.log
+      pos_file /var/log/fluentd-gpu.log.pos
+      tag hsof.gpu
+      <parse>
+        @type json
+        time_format %Y-%m-%dT%H:%M:%S.%NZ
+      </parse>
+    </source>
+
+    # Filter to add correlation IDs and enrich logs
+    <filter hsof.**>
+      @type record_transformer
+      enable_ruby true
+      <record>
+        cluster_name "hsof-production"
+        environment "production"
+        service "hsof"
+        correlation_id ${record["correlation_id"] || SecureRandom.uuid}
+        request_id ${record["request_id"] || record["correlation_id"]}
+        trace_id ${record["trace_id"] || record["correlation_id"]}
+        timestamp ${Time.now.strftime('%Y-%m-%dT%H:%M:%S.%3NZ')}
+        log_level ${record["level"] || record["severity"] || "INFO"}
+        component ${record["component"] || "unknown"}
+        gpu_id ${record["gpu_id"] || ""}
+        stage ${record["stage"] || ""}
+        dataset_id ${record["dataset_id"] || ""}
+      </record>
+    </filter>
+
+    # Filter for error alerting
+    <filter hsof.**>
+      @type grep
+      <regexp>
+        key log_level
+        pattern ^(ERROR|CRITICAL|FATAL)$
+      </regexp>
+      tag hsof.errors
+    </filter>
+
+    # Filter for performance metrics
+    <filter hsof.**>
+      @type grep
+      <regexp>
+        key message
+        pattern (duration|latency|throughput|performance)
+      </regexp>
+      tag hsof.performance
+    </filter>
+
+    # Parse JSON logs from Julia applications
+    <filter hsof.containers.**>
+      @type parser
+      key_name log
+      reserve_data true
+      inject_key_prefix parsed_
+      <parse>
+        @type json
+      </parse>
+    </filter>
+
+    # GPU specific log parsing
+    <filter hsof.gpu>
+      @type record_transformer
+      <record>
+        metric_type "gpu"
+        component "gpu-monitor"
+        gpu_utilization ${record["utilization"] || 0}
+        gpu_memory_used ${record["memory_used"] || 0}
+        gpu_temperature ${record["temperature"] || 0}
+      </record>
+    </filter>
+
+    # Performance log parsing
+    <filter hsof.performance>
+      @type record_transformer
+      <record>
+        metric_type "performance"
+        stage_duration ${record["duration"] || 0}
+        features_processed ${record["features_processed"] || 0}
+        batch_size ${record["batch_size"] || 0}
+      </record>
+    </filter>
+
+    # Output to Elasticsearch
+    <match hsof.**>
+      @type elasticsearch
+      host elasticsearch.logging.svc.cluster.local
+      port 9200
+      index_name hsof-logs-${Time.at(time).strftime('%Y.%m.%d')}
+      type_name _doc
+      include_tag_key true
+      tag_key @log_name
+      
+      # Buffer configuration
+      <buffer time>
+        @type file
+        path /var/log/fluentd-buffers/hsof
+        timekey 1h
+        timekey_wait 10m
+        timekey_use_utc true
+        chunk_limit_size 32m
+        total_limit_size 1g
+        flush_mode interval
+        flush_interval 30s
+        flush_thread_count 2
+        retry_max_interval 30
+        retry_forever true
+      </buffer>
+
+      # Template for index mapping
+      template_name hsof-logs
+      template_file /etc/fluentd/templates/hsof-template.json
+      template_overwrite true
+    </match>
+
+    # Output errors to separate index for alerting
+    <match hsof.errors>
+      @type elasticsearch
+      host elasticsearch.logging.svc.cluster.local
+      port 9200
+      index_name hsof-errors-${Time.at(time).strftime('%Y.%m.%d')}
+      type_name _doc
+      include_tag_key true
+      tag_key @log_name
+      
+      <buffer time>
+        @type file
+        path /var/log/fluentd-buffers/hsof-errors
+        timekey 1h
+        timekey_wait 5m
+        chunk_limit_size 16m
+        flush_mode interval
+        flush_interval 10s
+        retry_max_interval 10
+      </buffer>
+    </match>
+
+    # Output performance logs for analysis
+    <match hsof.performance>
+      @type elasticsearch
+      host elasticsearch.logging.svc.cluster.local
+      port 9200
+      index_name hsof-performance-${Time.at(time).strftime('%Y.%m.%d')}
+      type_name _doc
+      include_tag_key true
+      tag_key @log_name
+      
+      <buffer time>
+        @type file
+        path /var/log/fluentd-buffers/hsof-performance
+        timekey 1h
+        timekey_wait 10m
+        chunk_limit_size 16m
+        flush_mode interval
+        flush_interval 60s
+      </buffer>
+    </match>
+
+    # Fallback output for debugging
+    <match **>
+      @type stdout
+      <format>
+        @type json
+      </format>
+    </match>
+
+  hsof-template.json: |
+    {
+      "index_patterns": ["hsof-logs-*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 1,
+          "index.refresh_interval": "30s",
+          "index.codec": "best_compression"
+        },
+        "mappings": {
+          "properties": {
+            "@timestamp": {"type": "date"},
+            "timestamp": {"type": "date"},
+            "correlation_id": {"type": "keyword"},
+            "request_id": {"type": "keyword"},
+            "trace_id": {"type": "keyword"},
+            "log_level": {"type": "keyword"},
+            "component": {"type": "keyword"},
+            "service": {"type": "keyword"},
+            "environment": {"type": "keyword"},
+            "cluster_name": {"type": "keyword"},
+            "gpu_id": {"type": "keyword"},
+            "stage": {"type": "keyword"},
+            "dataset_id": {"type": "keyword"},
+            "message": {"type": "text", "analyzer": "standard"},
+            "gpu_utilization": {"type": "float"},
+            "gpu_memory_used": {"type": "long"},
+            "gpu_temperature": {"type": "float"},
+            "stage_duration": {"type": "float"},
+            "features_processed": {"type": "long"},
+            "batch_size": {"type": "integer"},
+            "metric_type": {"type": "keyword"}
+          }
+        }
+      }
+    }
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluentd
+  namespace: hsof
+spec:
+  selector:
+    matchLabels:
+      name: fluentd
+  template:
+    metadata:
+      labels:
+        name: fluentd
+    spec:
+      serviceAccount: fluentd
+      serviceAccountName: fluentd
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      containers:
+      - name: fluentd
+        image: fluent/fluentd-kubernetes-daemonset:v1.16-debian-elasticsearch7-1
+        env:
+        - name: FLUENT_ELASTICSEARCH_HOST
+          value: "elasticsearch.logging.svc.cluster.local"
+        - name: FLUENT_ELASTICSEARCH_PORT
+          value: "9200"
+        - name: FLUENT_ELASTICSEARCH_SCHEME
+          value: "http"
+        - name: FLUENT_UID
+          value: "0"
+        resources:
+          limits:
+            memory: 512Mi
+            cpu: 200m
+          requests:
+            memory: 256Mi
+            cpu: 100m
+        volumeMounts:
+        - name: varlog
+          mountPath: /var/log
+        - name: dockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+        - name: fluentd-config
+          mountPath: /fluentd/etc/fluent.conf
+          subPath: fluent.conf
+        - name: fluentd-config
+          mountPath: /etc/fluentd/templates/hsof-template.json
+          subPath: hsof-template.json
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: dockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: fluentd-config
+        configMap:
+          name: fluentd-config

@@ -1,0 +1,213 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logging
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: logging
+spec:
+  ports:
+  - port: 9200
+    name: http
+  - port: 9300
+    name: transport
+  selector:
+    app: elasticsearch
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: logging
+spec:
+  serviceName: elasticsearch
+  replicas: 3
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      containers:
+      - name: elasticsearch
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.17.9
+        ports:
+        - containerPort: 9200
+          name: http
+        - containerPort: 9300
+          name: transport
+        env:
+        - name: cluster.name
+          value: hsof-logging
+        - name: node.name
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: discovery.seed_hosts
+          value: "elasticsearch-0.elasticsearch.logging.svc.cluster.local,elasticsearch-1.elasticsearch.logging.svc.cluster.local,elasticsearch-2.elasticsearch.logging.svc.cluster.local"
+        - name: cluster.initial_master_nodes
+          value: "elasticsearch-0,elasticsearch-1,elasticsearch-2"
+        - name: ES_JAVA_OPTS
+          value: "-Xms2g -Xmx2g"
+        - name: xpack.security.enabled
+          value: "false"
+        - name: xpack.monitoring.enabled
+          value: "true"
+        resources:
+          requests:
+            memory: 4Gi
+            cpu: 1000m
+          limits:
+            memory: 4Gi
+            cpu: 2000m
+        volumeMounts:
+        - name: elasticsearch-data
+          mountPath: /usr/share/elasticsearch/data
+        - name: elasticsearch-config
+          mountPath: /usr/share/elasticsearch/config/elasticsearch.yml
+          subPath: elasticsearch.yml
+      volumes:
+      - name: elasticsearch-config
+        configMap:
+          name: elasticsearch-config
+      initContainers:
+      - name: increase-vm-max-map
+        image: busybox
+        command: ["sysctl", "-w", "vm.max_map_count=262144"]
+        securityContext:
+          privileged: true
+  volumeClaimTemplates:
+  - metadata:
+      name: elasticsearch-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 100Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elasticsearch-config
+  namespace: logging
+data:
+  elasticsearch.yml: |
+    cluster.name: hsof-logging
+    network.host: 0.0.0.0
+    
+    # Discovery settings
+    discovery.seed_hosts: ["elasticsearch-0.elasticsearch.logging.svc.cluster.local", "elasticsearch-1.elasticsearch.logging.svc.cluster.local", "elasticsearch-2.elasticsearch.logging.svc.cluster.local"]
+    cluster.initial_master_nodes: ["elasticsearch-0", "elasticsearch-1", "elasticsearch-2"]
+    
+    # Memory settings
+    bootstrap.memory_lock: false
+    
+    # Index settings
+    action.auto_create_index: true
+    action.destructive_requires_name: true
+    
+    # Performance settings
+    indices.memory.index_buffer_size: 20%
+    indices.queries.cache.size: 20%
+    indices.fielddata.cache.size: 40%
+    
+    # Log retention settings
+    cluster.routing.allocation.disk.threshold_enabled: true
+    cluster.routing.allocation.disk.watermark.low: 85%
+    cluster.routing.allocation.disk.watermark.high: 90%
+    cluster.routing.allocation.disk.watermark.flood_stage: 95%
+    
+    # Monitoring
+    xpack.monitoring.enabled: true
+    xpack.monitoring.collection.enabled: true
+    
+    # Security (disabled for simplicity)
+    xpack.security.enabled: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: logging
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5601
+    targetPort: 5601
+  selector:
+    app: kibana
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+      - name: kibana
+        image: docker.elastic.co/kibana/kibana:7.17.9
+        ports:
+        - containerPort: 5601
+        env:
+        - name: ELASTICSEARCH_HOSTS
+          value: http://elasticsearch.logging.svc.cluster.local:9200
+        - name: SERVER_NAME
+          value: kibana
+        - name: SERVER_HOST
+          value: 0.0.0.0
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 500m
+          limits:
+            memory: 2Gi
+            cpu: 1000m
+        volumeMounts:
+        - name: kibana-config
+          mountPath: /usr/share/kibana/config/kibana.yml
+          subPath: kibana.yml
+      volumes:
+      - name: kibana-config
+        configMap:
+          name: kibana-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kibana-config
+  namespace: logging
+data:
+  kibana.yml: |
+    server.name: kibana
+    server.host: 0.0.0.0
+    elasticsearch.hosts: ["http://elasticsearch.logging.svc.cluster.local:9200"]
+    
+    # HSOF-specific index patterns
+    kibana.defaultAppId: "discover"
+    kibana.index: ".kibana-hsof"
+    
+    # Logging
+    logging.level: info
+    logging.dest: stdout
+    
+    # Performance
+    elasticsearch.requestTimeout: 30000
+    elasticsearch.shardTimeout: 30000
+    
+    # Security (disabled)
+    xpack.security.enabled: false
+    xpack.encryptedSavedObjects.encryptionKey: "hsof-logging-encryption-key-32-chars"

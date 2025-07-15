@@ -1,0 +1,311 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slo-config
+  namespace: hsof
+data:
+  slo-rules.yml: |
+    groups:
+    - name: hsof_slo_availability
+      interval: 30s
+      rules:
+      # Availability SLO: 99.9% uptime (8.77 hours downtime per year)
+      - record: hsof:availability_slo:error_rate_5m
+        expr: |
+          (
+            rate(hsof_requests_total{status=~"5.."}[5m])
+            /
+            rate(hsof_requests_total[5m])
+          ) * 100
+      
+      - record: hsof:availability_slo:success_rate_5m
+        expr: |
+          (
+            rate(hsof_requests_total{status!~"5.."}[5m])
+            /
+            rate(hsof_requests_total[5m])
+          ) * 100
+      
+      # Error budget calculation: 0.1% error rate allowed
+      - record: hsof:availability_slo:error_budget_remaining
+        expr: |
+          (
+            0.1 - hsof:availability_slo:error_rate_5m
+          ) / 0.1 * 100
+      
+      # Error budget consumption rate (errors per hour)
+      - record: hsof:availability_slo:error_budget_consumption_rate
+        expr: |
+          rate(hsof_requests_total{status=~"5.."}[1h]) * 3600
+      
+      # Days until error budget exhausted at current rate
+      - record: hsof:availability_slo:error_budget_days_remaining
+        expr: |
+          (
+            (rate(hsof_requests_total[30d]) * 0.001 * 30)
+            -
+            increase(hsof_requests_total{status=~"5.."}[30d])
+          )
+          /
+          (rate(hsof_requests_total{status=~"5.."}[24h]) * 24)
+
+    - name: hsof_slo_latency
+      interval: 30s
+      rules:
+      # Latency SLO: 95% of requests under 30 seconds
+      - record: hsof:latency_slo:p95_latency_5m
+        expr: |
+          histogram_quantile(0.95, 
+            rate(hsof_request_duration_seconds_bucket[5m])
+          )
+      
+      - record: hsof:latency_slo:p99_latency_5m
+        expr: |
+          histogram_quantile(0.99,
+            rate(hsof_request_duration_seconds_bucket[5m])
+          )
+      
+      # Latency SLO compliance: percentage of requests under 30s
+      - record: hsof:latency_slo:fast_requests_rate
+        expr: |
+          (
+            rate(hsof_request_duration_seconds_bucket{le="30"}[5m])
+            /
+            rate(hsof_request_duration_seconds_count[5m])
+          ) * 100
+      
+      # Latency error budget: 5% of requests allowed to exceed 30s
+      - record: hsof:latency_slo:error_budget_remaining
+        expr: |
+          (
+            95 - hsof:latency_slo:fast_requests_rate
+          ) / 95 * 100
+
+    - name: hsof_slo_throughput
+      interval: 30s
+      rules:
+      # Throughput SLO: Process at least 100 datasets per hour
+      - record: hsof:throughput_slo:datasets_per_hour
+        expr: |
+          rate(hsof_datasets_processed_total[1h]) * 3600
+      
+      - record: hsof:throughput_slo:target_compliance
+        expr: |
+          (hsof:throughput_slo:datasets_per_hour / 100) * 100
+      
+      # Throughput error budget: Allow 10% below target
+      - record: hsof:throughput_slo:error_budget_remaining
+        expr: |
+          max(0, (hsof:throughput_slo:datasets_per_hour - 90) / 10 * 100)
+
+    - name: hsof_slo_quality
+      interval: 30s
+      rules:
+      # Quality SLO: Feature selection quality score > 0.8
+      - record: hsof:quality_slo:score_5m
+        expr: |
+          avg_over_time(hsof_selection_quality_score[5m])
+      
+      - record: hsof:quality_slo:target_compliance
+        expr: |
+          (hsof:quality_slo:score_5m / 0.8) * 100
+      
+      # Quality error budget
+      - record: hsof:quality_slo:error_budget_remaining
+        expr: |
+          max(0, (hsof:quality_slo:score_5m - 0.7) / 0.1 * 100)
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slo-alerts
+  namespace: hsof
+data:
+  slo-alerts.yml: |
+    groups:
+    - name: hsof_slo_alerts
+      rules:
+      # Availability SLO alerts
+      - alert: AvailabilitySLOErrorBudgetCritical
+        expr: hsof:availability_slo:error_budget_remaining < 10
+        for: 5m
+        labels:
+          severity: critical
+          slo: availability
+        annotations:
+          summary: "HSOF availability error budget critically low"
+          description: "Availability error budget is {{ $value }}%, less than 10% remaining"
+          runbook_url: "https://internal-docs/runbooks/error-budget-exhausted"
+      
+      - alert: AvailabilitySLOErrorBudgetWarning
+        expr: hsof:availability_slo:error_budget_remaining < 25
+        for: 10m
+        labels:
+          severity: warning
+          slo: availability
+        annotations:
+          summary: "HSOF availability error budget low"
+          description: "Availability error budget is {{ $value }}%, less than 25% remaining"
+      
+      - alert: AvailabilitySLOBreach
+        expr: hsof:availability_slo:success_rate_5m < 99.9
+        for: 5m
+        labels:
+          severity: critical
+          slo: availability
+        annotations:
+          summary: "HSOF availability SLO breached"
+          description: "Availability is {{ $value }}%, below 99.9% SLO target"
+      
+      # Latency SLO alerts
+      - alert: LatencySLOErrorBudgetCritical
+        expr: hsof:latency_slo:error_budget_remaining < 10
+        for: 5m
+        labels:
+          severity: critical
+          slo: latency
+        annotations:
+          summary: "HSOF latency error budget critically low"
+          description: "Latency error budget is {{ $value }}%, less than 10% remaining"
+      
+      - alert: LatencySLOBreach
+        expr: hsof:latency_slo:fast_requests_rate < 95
+        for: 5m
+        labels:
+          severity: warning
+          slo: latency
+        annotations:
+          summary: "HSOF latency SLO breached"
+          description: "{{ $value }}% of requests are under 30s, below 95% SLO target"
+      
+      # Throughput SLO alerts
+      - alert: ThroughputSLOErrorBudgetCritical
+        expr: hsof:throughput_slo:error_budget_remaining < 10
+        for: 15m
+        labels:
+          severity: critical
+          slo: throughput
+        annotations:
+          summary: "HSOF throughput error budget critically low"
+          description: "Throughput error budget is {{ $value }}%, less than 10% remaining"
+      
+      - alert: ThroughputSLOBreach
+        expr: hsof:throughput_slo:datasets_per_hour < 90
+        for: 30m
+        labels:
+          severity: warning
+          slo: throughput
+        annotations:
+          summary: "HSOF throughput SLO breached"
+          description: "Processing {{ $value }} datasets/hour, below 100 datasets/hour SLO target"
+      
+      # Quality SLO alerts
+      - alert: QualitySLOErrorBudgetCritical
+        expr: hsof:quality_slo:error_budget_remaining < 10
+        for: 10m
+        labels:
+          severity: critical
+          slo: quality
+        annotations:
+          summary: "HSOF quality error budget critically low"
+          description: "Quality error budget is {{ $value }}%, less than 10% remaining"
+      
+      - alert: QualitySLOBreach
+        expr: hsof:quality_slo:score_5m < 0.7
+        for: 10m
+        labels:
+          severity: warning
+          slo: quality
+        annotations:
+          summary: "HSOF quality SLO breached"
+          description: "Quality score is {{ $value }}, below 0.8 SLO target"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: slo-exporter
+  namespace: hsof
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: metrics
+  selector:
+    app: slo-exporter
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slo-exporter
+  namespace: hsof
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: slo-exporter
+  template:
+    metadata:
+      labels:
+        app: slo-exporter
+    spec:
+      containers:
+      - name: slo-exporter
+        image: prom/prometheus:v2.40.0
+        args:
+        - '--config.file=/etc/prometheus/prometheus.yml'
+        - '--storage.tsdb.path=/prometheus/'
+        - '--web.console.libraries=/etc/prometheus/console_libraries'
+        - '--web.console.templates=/etc/prometheus/consoles'
+        - '--web.enable-lifecycle'
+        - '--web.route-prefix=/'
+        - '--web.external-url=http://slo-exporter:8080'
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 200m
+          limits:
+            memory: 1Gi
+            cpu: 500m
+        volumeMounts:
+        - name: slo-config
+          mountPath: /etc/prometheus/slo-rules.yml
+          subPath: slo-rules.yml
+        - name: slo-prometheus-config
+          mountPath: /etc/prometheus/prometheus.yml
+          subPath: prometheus.yml
+      volumes:
+      - name: slo-config
+        configMap:
+          name: slo-config
+      - name: slo-prometheus-config
+        configMap:
+          name: slo-prometheus-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slo-prometheus-config
+  namespace: hsof
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    
+    rule_files:
+    - "/etc/prometheus/slo-rules.yml"
+    
+    scrape_configs:
+    - job_name: 'hsof-main'
+      static_configs:
+      - targets: ['hsof-main:8080']
+      scrape_interval: 30s
+      metrics_path: /metrics
+    
+    - job_name: 'prometheus'
+      static_configs:
+      - targets: ['localhost:8080']
