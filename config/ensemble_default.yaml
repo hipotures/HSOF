@@ -1,0 +1,63 @@
+# Default Ensemble Configuration
+# This configuration is optimized for dual RTX 4090 GPU setup
+
+# Core ensemble parameters
+num_trees: 100
+trees_per_gpu: 50
+max_nodes_per_tree: 20000
+max_depth: 50
+
+# MCTS parameters
+exploration_constant_min: 0.5
+exploration_constant_max: 2.0
+virtual_loss: 10
+max_iterations: 1000000
+
+# Feature selection parameters
+initial_features: 500
+target_features: 50
+feature_subset_ratio: 0.8
+
+# Diversity parameters
+diversity_threshold: 0.7
+random_seed_base: 12345
+
+# Memory management
+memory_pool_size: 0.8
+gc_threshold: 0.75
+defrag_threshold: 0.5
+
+# Performance parameters
+batch_size: 1024
+update_interval_ms: 100
+sync_interval_iterations: 1000
+
+# GPU configuration
+gpu_devices: [0, 1]
+memory_limit_gb: 22.0
+
+# Convergence detection
+convergence_window: 100
+convergence_threshold: 0.01
+min_iterations: 10000
+
+# File paths
+model_path: "models/metamodel.jl"
+data_path: "data/features.sqlite"
+output_path: "results/ensemble_results.json"
+log_path: "logs/ensemble.log"
+
+# Advanced features
+lazy_expansion: true
+shared_features: true
+compressed_nodes: true
+fault_tolerance: true
+
+# Monitoring
+enable_profiling: true
+enable_dashboard: true
+dashboard_refresh_ms: 100
+
+# Performance targets
+target_gpu_utilization: 0.85
+target_scaling_efficiency: 0.85
