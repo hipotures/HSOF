@@ -1,0 +1,110 @@
+version: '3.8'
+
+# Development overrides for docker-compose.yml
+# This file is automatically loaded by docker-compose
+
+services:
+  hsof:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - BUILD_ENV=development
+    environment:
+      - JULIA_DEBUG=HSOF
+      - LOG_LEVEL=debug
+      - DEVELOPMENT_MODE=true
+    volumes:
+      # Mount source code for hot reloading
+      - ./src:/app/src
+      - ./test:/app/test
+      - ./scripts:/app/scripts
+      - ./benchmarks:/app/benchmarks
+      # Development tools
+      - ./notebooks:/app/notebooks
+    command: julia --project=. -e "using Revise; includet(\"src/HSOF.jl\"); HSOF.run_server()"
+    stdin_open: true
+    tty: true
+
+  postgres:
+    environment:
+      - POSTGRES_LOG_STATEMENT=all
+      - POSTGRES_LOG_DURATION=on
+    ports:
+      # Expose PostgreSQL for development tools
+      - "5432:5432"
+
+  redis:
+    command: >
+      redis-server
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --loglevel debug
+    ports:
+      # Expose Redis for development tools
+      - "6379:6379"
+
+  # Development database admin tool
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: hsof-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@hsof.local
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - hsof-network
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    profiles:
+      - dev-tools
+
+  # Redis commander for cache inspection
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: hsof-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    networks:
+      - hsof-network
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    profiles:
+      - dev-tools
+
+  # Julia notebook server for interactive development
+  pluto:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hsof-pluto
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    command: julia --project=. -e "using Pluto; Pluto.run(host=\"0.0.0.0\", port=1234)"
+    volumes:
+      - ./src:/app/src
+      - ./notebooks:/app/notebooks
+    networks:
+      - hsof-network
+    ports:
+      - "1234:1234"
+    profiles:
+      - notebooks
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  pgadmin-data:
+    driver: local

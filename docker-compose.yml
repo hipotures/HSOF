@@ -1,0 +1,156 @@
+version: '3.8'
+
+services:
+  # Main HSOF application with GPU support
+  hsof:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hsof:latest
+    container_name: hsof-app
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - JULIA_NUM_THREADS=8
+      - JULIA_CUDA_MEMORY_POOL=none
+      - DATABASE_URL=postgresql://hsof:${DB_PASSWORD:-hsof123}@postgres:5432/hsof
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - GPU_CONFIG_PATH=/app/configs/gpu_config.toml
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - ./configs:/app/configs:ro
+      - hsof-checkpoints:/app/checkpoints
+    networks:
+      - hsof-network
+    ports:
+      - "${HSOF_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "julia", "-e", "include(\"scripts/health_check.jl\")"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # PostgreSQL for feature selection history and results
+  postgres:
+    image: postgres:15-alpine
+    container_name: hsof-postgres
+    environment:
+      - POSTGRES_DB=hsof
+      - POSTGRES_USER=hsof
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-hsof123}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - hsof-network
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hsof -d hsof"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Redis for caching metamodel predictions and MCTS state
+  redis:
+    image: redis:7-alpine
+    container_name: hsof-redis
+    command: >
+      redis-server
+      --maxmemory ${REDIS_MAX_MEMORY:-2gb}
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --save 300 10
+      --save 900 1
+    volumes:
+      - redis-data:/data
+    networks:
+      - hsof-network
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # Monitoring service (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: hsof-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - hsof-network
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      - hsof
+    restart: unless-stopped
+
+  # Grafana for visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: hsof-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - hsof-network
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+networks:
+  hsof-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  hsof-checkpoints:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
