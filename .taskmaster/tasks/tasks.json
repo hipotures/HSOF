@@ -1281,7 +1281,7 @@
               1
             ],
             "details": "Create stratified splitting function that preserves target distribution across folds (default k=5). Implement fold validation to ensure minimum samples per class in each fold. Add support for regression tasks using quantile-based stratification. Create CV iterator that yields train/test indices for each fold. Implement fold-wise metric calculation (accuracy, F1, AUC, RMSE). Add reproducibility support with seed management across folds. Handle imbalanced datasets with SMOTE option.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -1763,7 +1763,7 @@
     ],
     "metadata": {
       "created": "2025-07-14T16:41:00.071Z",
-      "updated": "2025-07-15T10:17:26.261Z",
+      "updated": "2025-07-15T10:26:22.013Z",
       "description": "Tasks for master context"
     }
   }
