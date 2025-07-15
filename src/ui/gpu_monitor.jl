@@ -9,20 +9,24 @@ using LinearAlgebra
 export GPUMetrics, GPUMonitorConfig, GPUMonitorState
 export create_gpu_monitor, update_metrics!, get_current_metrics, get_historical_metrics
 export select_gpu!, get_available_gpus, is_gpu_available
-export start_monitoring!, stop_monitoring!, reset_metrics!
+export start_monitoring!, stop_monitoring!, reset_metrics!, get_metric_history
 
 """
 GPU metrics data structure containing all monitored values
 """
 mutable struct GPUMetrics
     gpu_id::Int                    # GPU device ID
+    name::String                   # GPU name/model
     utilization::Float64           # GPU utilization (0-100%) - simulated
-    memory_used::Float64           # Memory used in GB
-    memory_total::Float64          # Total memory in GB
+    memory_used::Float64           # Memory used in MB
+    memory_total::Float64          # Total memory in MB
     memory_percent::Float64        # Memory usage percentage
     temperature::Float64           # Temperature in Celsius - simulated
     power_draw::Float64           # Power draw in Watts - simulated
-    clock_speed::Float64          # Clock speed in MHz - simulated
+    power_limit::Float64          # Power limit in Watts
+    clock_graphics::Float64       # Graphics clock speed in MHz
+    clock_memory::Float64         # Memory clock speed in MHz  
+    clock_speed::Float64          # Clock speed in MHz - simulated (legacy)
     fan_speed::Float64            # Fan speed (0-100%) - simulated
     timestamp::DateTime           # When metrics were collected
     is_available::Bool            # Whether GPU is available
@@ -139,9 +143,34 @@ function collect_gpu_metrics!(monitor::GPUMonitorState, device_id::Int)
         end
     end
     
+    # Get GPU name
+    gpu_name = "Unknown GPU"
+    if CUDA.functional() && device_id in 0:length(CUDA.devices())-1
+        try
+            CUDA.device!(device_id)
+            gpu_name = CUDA.name(CUDA.device())
+        catch
+            # Fallback name
+        end
+    end
+    
     metrics = GPUMetrics(
-        device_id, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        now(), false, nothing
+        device_id,                # gpu_id
+        gpu_name,                 # name
+        0.0,                     # utilization
+        0.0,                     # memory_used (MB)
+        0.0,                     # memory_total (MB)
+        0.0,                     # memory_percent
+        0.0,                     # temperature
+        0.0,                     # power_draw
+        300.0,                   # power_limit (default)
+        0.0,                     # clock_graphics
+        0.0,                     # clock_memory
+        0.0,                     # clock_speed (legacy)
+        0.0,                     # fan_speed
+        now(),                   # timestamp
+        false,                   # is_available
+        nothing                  # error_message
     )
     
     if device_id in monitor.devices && CUDA.functional()
@@ -151,8 +180,8 @@ function collect_gpu_metrics!(monitor::GPUMonitorState, device_id::Int)
             CUDA.device!(device_id)
             
             # Get real memory metrics
-            free_mem = CUDA.available_memory() / 1e9  # Convert to GB
-            total_mem = CUDA.total_memory() / 1e9     # Convert to GB
+            free_mem = CUDA.available_memory() / 1e6  # Convert to MB
+            total_mem = CUDA.total_memory() / 1e6     # Convert to MB
             used_mem = total_mem - free_mem
             mem_percent = (used_mem / total_mem) * 100.0
             
@@ -235,6 +264,14 @@ function simulate_gpu_metrics!(metrics::GPUMetrics, monitor::GPUMonitorState, de
     metrics.clock_speed = baseline.clock * clock_factor +
                          100.0 * time_factor + randn() * 50.0 * noise_factor
     metrics.clock_speed = clamp(metrics.clock_speed, 1200.0, 2500.0)
+    
+    # Graphics and memory clocks
+    metrics.clock_graphics = metrics.clock_speed
+    metrics.clock_memory = 8000.0 + 1000.0 * time_factor + randn() * 100.0 * noise_factor
+    metrics.clock_memory = clamp(metrics.clock_memory, 7000.0, 11000.0)
+    
+    # Power limit (static for simulation)
+    metrics.power_limit = 350.0  # Typical for high-end GPUs
     
     # Fan speed follows temperature
     fan_target = 20.0 + (metrics.temperature - 40.0) * 1.5
@@ -425,6 +462,32 @@ function Base.show(io::IO, metrics::GPUMetrics)
         if !isnothing(metrics.error_message)
             print(io, " - $(metrics.error_message)")
         end
+    end
+end
+
+"""
+Get history of a specific metric for a GPU
+"""
+function get_metric_history(monitor::GPUMonitorState, gpu_idx::Int, metric::Symbol)
+    if !haskey(monitor.metrics_history, gpu_idx)
+        return Float64[]
+    end
+    
+    history = monitor.metrics_history[gpu_idx]
+    
+    # Extract the requested metric from history
+    if metric == :utilization
+        return [m.utilization for m in history]
+    elseif metric == :temperature
+        return [m.temperature for m in history]
+    elseif metric == :memory_percent
+        return [m.memory_percent for m in history]
+    elseif metric == :power_draw
+        return [m.power_draw for m in history]
+    elseif metric == :clock_speed
+        return [m.clock_speed for m in history]
+    else
+        error("Unknown metric: $metric")
     end
 end
 

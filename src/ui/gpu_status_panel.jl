@@ -167,7 +167,7 @@ end
 function render_single_gpu!(lines::Vector{String}, state::GPUPanelState, gpu_idx::Int, width::Int, height::Int)
     metrics = GPUMonitor.get_current_metrics(state.monitor, gpu_idx)
     if isnothing(metrics)
-        push!(lines, "GPU $gpu_idx: Not Available")
+        push!(lines, "GPU $(gpu_idx + 1): Not Available")
         return
     end
     
@@ -213,13 +213,27 @@ function render_single_gpu!(lines::Vector{String}, state::GPUPanelState, gpu_idx
         push!(lines, "")  # Blank line
         history = GPUMonitor.get_metric_history(state.monitor, gpu_idx, :utilization)
         if !isempty(history)
-            spark_line = SparklineGraph.render_sparkline(
-                last(history, min(60, length(history))),
-                width = width - 4,
-                height = 1,
-                theme = state.theme,
-                show_axes = false
-            )
+            # Create simple sparkline
+            spark_chars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
+            data_points = last(history, min(width - 4, length(history)))
+            spark_line = ""
+            
+            if !isempty(data_points)
+                min_val = minimum(data_points)
+                max_val = maximum(data_points)
+                range = max_val - min_val
+                
+                for val in data_points
+                    if range > 0
+                        normalized = (val - min_val) / range
+                        idx = round(Int, normalized * 7) + 1
+                        idx = clamp(idx, 1, 8)
+                    else
+                        idx = 4  # Middle if all values are the same
+                    end
+                    spark_line *= spark_chars[idx]
+                end
+            end
             push!(lines, "  " * spark_line)
         end
     end
@@ -236,7 +250,7 @@ end
 # Render GPU header with name and activity
 function render_gpu_header(state::GPUPanelState, gpu_idx::Int, metrics::GPUMonitor.GPUMetrics, width::Int)
     # GPU name and index
-    name = "GPU $gpu_idx: $(metrics.name)"
+    name = "GPU $(gpu_idx + 1): $(metrics.name)"
     
     # Activity indicator
     activity = get_activity_symbol(state.activity_phase)
@@ -485,20 +499,24 @@ function render_gpu_comparison!(lines::Vector{String}, state::GPUPanelState, wid
     for (i, gpu_idx) in enumerate(state.gpu_indices)
         metrics = GPUMonitor.get_current_metrics(state.monitor, gpu_idx)
         if !isnothing(metrics)
-            gpu_header = @sprintf("GPU %d: %s", gpu_idx, 
-                                 metrics.name[1:min(end, gpu_width-8)])
-            
-            # Pad to gpu_width
-            gpu_header = rpad(gpu_header, gpu_width)
+            # Create header with space for activity indicator
+            name_width = gpu_width - 10  # Account for "GPU X: " and activity
+            gpu_name = length(metrics.name) > name_width ? 
+                      metrics.name[1:name_width] : metrics.name
+            gpu_header = @sprintf("GPU %d: %s", gpu_idx + 1, gpu_name)
             
             # Add activity indicator
             activity = get_activity_symbol(state.activity_phase + i)
             activity_color = metrics.utilization > 50 ? 
                            get_status_color(state.theme, :normal) :
                            get_status_color(state.theme, :dim)
-            gpu_header = apply_theme_color(activity, activity_color) * " " * gpu_header[2:end]
+            activity_str = apply_theme_color(activity, activity_color) * " "
             
-            header_line *= gpu_header
+            # Combine and pad
+            full_header = activity_str * gpu_header
+            full_header = rpad(full_header, gpu_width + 2)  # +2 for activity indicator
+            
+            header_line *= full_header
             if i < gpu_count
                 header_line *= "│"
             end
@@ -601,13 +619,27 @@ function render_gpu_comparison!(lines::Vector{String}, state::GPUPanelState, wid
         for (i, gpu_idx) in enumerate(state.gpu_indices)
             history = GPUMonitor.get_metric_history(state.monitor, gpu_idx, :utilization)
             if !isempty(history)
-                spark = SparklineGraph.render_sparkline(
-                    last(history, min(30, length(history))),
-                    width = gpu_width - 2,
-                    height = 1,
-                    theme = state.theme,
-                    show_axes = false
-                )
+                # Create simple sparkline
+                spark_chars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
+                data_points = last(history, min(gpu_width - 2, length(history)))
+                spark = ""
+                
+                if !isempty(data_points)
+                    min_val = minimum(data_points)
+                    max_val = maximum(data_points)
+                    range = max_val - min_val
+                    
+                    for val in data_points
+                        if range > 0
+                            normalized = (val - min_val) / range
+                            idx = round(Int, normalized * 7) + 1
+                            idx = clamp(idx, 1, 8)
+                        else
+                            idx = 4  # Middle if all values are the same
+                        end
+                        spark *= spark_chars[idx]
+                    end
+                end
                 spark_line *= " " * spark * " "
             else
                 spark_line *= rpad("", gpu_width)
