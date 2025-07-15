@@ -48,6 +48,10 @@ using .PerformanceMonitoring
 include("dynamic_rebalancing.jl")
 using .DynamicRebalancing
 
+# Result Aggregation for Multi-GPU
+include("result_aggregation.jl")
+using .ResultAggregation
+
 # GPU Management exports
 export initialize_devices, get_device_info, validate_gpu_environment
 export GPUManager, DeviceManager, StreamManager, MemoryManager
@@ -122,6 +126,13 @@ export get_rebalancing_history, get_current_distribution
 export set_rebalancing_threshold!, enable_auto_rebalancing!
 # Export rebalancing state enum values
 export BALANCED, MONITORING, PLANNING, MIGRATING, STABILIZING
+
+# Result Aggregation exports
+export ResultAggregator, TreeResult, FeatureScore, EnsembleResult
+export create_result_aggregator, submit_tree_result!, aggregate_results
+export get_ensemble_consensus, get_feature_rankings, get_aggregated_results
+export clear_results!, reset_cache!, get_cache_stats
+export set_consensus_threshold!, enable_caching!
 
 # Module initialization
 function __init__()
