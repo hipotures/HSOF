@@ -60,6 +60,10 @@ using .ScalingEfficiency
 include("memory_optimization.jl")
 using .MemoryOptimization
 
+# MCTS GPU Integration
+include("mcts_gpu_integration.jl")
+using .MCTSGPUIntegration
+
 # GPU Management exports
 export initialize_devices, get_device_info, validate_gpu_environment
 export GPUManager, DeviceManager, StreamManager, MemoryManager
@@ -153,6 +157,12 @@ export MemoryProfile, AccessPattern, MemoryPool, CachedArray
 export profile_memory_access, optimize_data_layout, create_memory_pool
 export coalesced_read!, coalesced_write!, prefetch_data!
 export analyze_bandwidth_utilization, get_memory_stats
+
+# MCTS GPU Integration exports
+export DistributedMCTSEngine, DistributedMCTSConfig
+export create_distributed_engine, initialize_distributed_mcts!
+export run_distributed_mcts!, get_distributed_results
+export synchronize_trees!, aggregate_candidates
 
 # Module initialization
 function __init__()
