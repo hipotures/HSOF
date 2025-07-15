@@ -1097,7 +1097,7 @@
               5
             ],
             "details": "Create feature mask data structure efficiently tracking available features per tree. Implement mask update logic when features are selected or permanently rejected. Build mask propagation system ensuring child nodes inherit parent constraints. Design mask merging algorithm for combining constraints from multiple trees. Implement mask validation ensuring minimum features remain available for selection.",
-            "status": "in-progress",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -1109,7 +1109,7 @@
               4
             ],
             "details": "Implement feature vote counting system tracking selection frequency across all trees. Create weight calculation based on tree performance and exploration depth. Build consensus threshold mechanism requiring minimum agreement percentage. Design tie-breaking rules for features with equal votes. Implement progressive consensus allowing early stopping when strong agreement emerges.",
-            "status": "pending",
+            "status": "in-progress",
             "testStrategy": ""
           },
           {
@@ -1763,7 +1763,7 @@
     ],
     "metadata": {
       "created": "2025-07-14T16:41:00.071Z",
-      "updated": "2025-07-15T06:03:19.306Z",
+      "updated": "2025-07-15T06:13:14.059Z",
       "description": "Tasks for master context"
     }
   }
