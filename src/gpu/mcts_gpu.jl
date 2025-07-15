@@ -8,6 +8,10 @@ using JSON3
 # Include kernel modules
 include("kernels/mcts_types.jl")
 include("kernels/memory_pool.jl")
+include("kernels/compressed_node_storage.jl")
+include("kernels/shared_feature_storage.jl")
+include("kernels/lazy_expansion.jl")
+include("kernels/memory_efficient_mcts.jl")
 include("kernels/synchronization.jl")
 include("kernels/batch_evaluation.jl")
 include("kernels/warp_optimization.jl")
@@ -17,6 +21,10 @@ include("kernels/tree_statistics.jl")
 
 using .MCTSTypes
 using .MemoryPool
+using .CompressedNodeStorage
+using .SharedFeatureStorage
+using .LazyExpansion
+using .MemoryEfficientMCTS
 using .Synchronization
 using .BatchEvaluation
 using .WarpOptimization
@@ -28,6 +36,8 @@ export MCTSGPUEngine, initialize!, start!, stop!, get_statistics
 export select_features, get_best_features, reset_tree!
 export get_performance_report, export_performance_metrics
 export collect_tree_stats, get_tree_summary
+export MemoryEfficientTreeEnsemble, initialize_ensemble!, run_ensemble_mcts!
+export get_best_features_ensemble, get_ensemble_statistics
 
 """
 Main MCTS GPU Engine managing the persistent kernel and tree operations
