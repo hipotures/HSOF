@@ -854,7 +854,7 @@
             "description": "Create GPU-accelerated circular buffer storing last 1000 MCTS evaluations with prioritized sampling based on prediction error",
             "dependencies": [],
             "details": "Design CUDA-compatible buffer structure with feature combinations and scores. Implement TD-error based priority calculation for sampling. Create efficient GPU kernels for buffer insertion and sampling. Add memory pooling to avoid allocation overhead. Support concurrent read/write operations during MCTS exploration.",
-            "status": "pending",
+            "status": "in-progress",
             "testStrategy": ""
           },
           {
@@ -1763,7 +1763,7 @@
     ],
     "metadata": {
       "created": "2025-07-14T16:41:00.071Z",
-      "updated": "2025-07-15T00:04:15.293Z",
+      "updated": "2025-07-15T00:04:45.619Z",
       "description": "Tasks for master context"
     }
   }
