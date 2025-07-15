@@ -978,7 +978,7 @@
               11
             ],
             "details": "Integrate NVIDIA Nsight Systems markers throughout pipeline. Add custom CUDA event timers for kernel profiling. Create automated performance regression tests. Build reporting dashboard with bottleneck analysis. Include memory bandwidth utilization metrics.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -1763,7 +1763,7 @@
     ],
     "metadata": {
       "created": "2025-07-14T16:41:00.071Z",
-      "updated": "2025-07-15T04:50:12.454Z",
+      "updated": "2025-07-15T05:04:39.161Z",
       "description": "Tasks for master context"
     }
   }
