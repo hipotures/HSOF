@@ -24,6 +24,10 @@ using .MCTSGPU
 include("work_distribution.jl")
 using .WorkDistribution
 
+# PCIe Communication for Multi-GPU
+include("pcie_communication.jl")
+using .PCIeCommunication
+
 # GPU Management exports
 export initialize_devices, get_device_info, validate_gpu_environment
 export GPUManager, DeviceManager, StreamManager, MemoryManager
@@ -38,6 +42,13 @@ export create_work_distributor, assign_tree_work, assign_metamodel_work
 export get_gpu_for_tree, get_tree_range, get_load_balance_ratio
 export update_metrics!, rebalance_if_needed!, get_work_summary
 export set_gpu_affinity, execute_on_gpu
+
+# PCIe Communication exports
+export PCIeTransferManager, CandidateData, TransferBuffer, TransferStats
+export create_transfer_manager, select_top_candidates, transfer_candidates
+export enable_peer_access!, can_access_peer, get_transfer_stats
+export reset_buffer!, should_transfer, compress_candidates, decompress_candidates
+export add_candidates!, broadcast_candidates
 
 # Module initialization
 function __init__()
