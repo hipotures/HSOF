@@ -1,0 +1,119 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: hsof-staging
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Reference to base configuration
+resources:
+- ../../base
+
+# Namespace for staging
+namespace: hsof-staging
+
+# Staging-specific labels
+commonLabels:
+  environment: staging
+  tier: testing
+
+# Staging annotations
+commonAnnotations:
+  deployment.environment: "staging"
+  monitoring.enabled: "true"
+  backup.enabled: "false"
+
+# Staging image configuration (use latest for testing)
+images:
+- name: hsof
+  newTag: staging
+
+# Staging replicas (minimal)
+replicas:
+- name: hsof-main
+  count: 1
+
+# Staging-specific patches
+patches:
+# Reduced resource limits for staging
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: "8Gi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: "16Gi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "2"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "4"
+  target:
+    kind: Deployment
+    name: hsof-main
+
+# Staging HPA scaling (more conservative)
+- patch: |-
+    - op: replace
+      path: /spec/maxReplicas
+      value: 2
+    - op: replace
+      path: /spec/metrics/0/resource/target/averageUtilization
+      value: 80
+  target:
+    kind: HorizontalPodAutoscaler
+    name: hsof-hpa
+
+# Staging storage (smaller)
+- patch: |-
+    - op: replace
+      path: /spec/resources/requests/storage
+      value: "20Gi"
+  target:
+    kind: PersistentVolumeClaim
+    name: hsof-model-storage
+
+- patch: |-
+    - op: replace
+      path: /spec/resources/requests/storage
+      value: "50Gi"
+  target:
+    kind: PersistentVolumeClaim
+    name: hsof-checkpoint-storage
+
+- patch: |-
+    - op: replace
+      path: /spec/resources/requests/storage
+      value: "50Gi"
+  target:
+    kind: PersistentVolumeClaim
+    name: hsof-data-storage
+
+# Staging ConfigMap patches
+- patch: |-
+    - op: replace
+      path: /data/HSOF_LOG_LEVEL
+      value: "DEBUG"
+    - op: replace
+      path: /data/HSOF_MAX_MEMORY_GB
+      value: "16"
+    - op: add
+      path: /data/HSOF_STAGING_MODE
+      value: "true"
+    - op: add
+      path: /data/HSOF_DEBUG_GPU
+      value: "true"
+  target:
+    kind: ConfigMap
+    name: hsof-config
+
+# Staging-specific ConfigMaps
+configMapGenerator:
+- name: hsof-staging-config
+  literals:
+  - HSOF_BACKUP_ENABLED=false
+  - HSOF_MONITORING_DETAILED=true
+  - HSOF_DEBUG_MODE=true
+  - HSOF_TEST_MODE=true

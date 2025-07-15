@@ -1,0 +1,117 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: hsof-production
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Reference to base configuration
+resources:
+- ../../base
+
+# Namespace override for production
+namespace: hsof-prod
+
+# Production-specific labels
+commonLabels:
+  environment: production
+  tier: gpu-compute
+
+# Production annotations
+commonAnnotations:
+  deployment.environment: "production"
+  monitoring.enabled: "true"
+  backup.enabled: "true"
+
+# Production image configuration
+images:
+- name: hsof
+  newTag: v1.0.0
+
+# Production replicas
+replicas:
+- name: hsof-main
+  count: 2
+
+# Production-specific patches
+patches:
+# Resource limits patch for production
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: "32Gi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: "64Gi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "8"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "16"
+  target:
+    kind: Deployment
+    name: hsof-main
+
+# Production HPA scaling patch
+- patch: |-
+    - op: replace
+      path: /spec/maxReplicas
+      value: 5
+    - op: replace
+      path: /spec/metrics/0/resource/target/averageUtilization
+      value: 60
+  target:
+    kind: HorizontalPodAutoscaler
+    name: hsof-hpa
+
+# Production storage size patch
+- patch: |-
+    - op: replace
+      path: /spec/resources/requests/storage
+      value: "200Gi"
+  target:
+    kind: PersistentVolumeClaim
+    name: hsof-model-storage
+
+- patch: |-
+    - op: replace
+      path: /spec/resources/requests/storage
+      value: "500Gi"
+  target:
+    kind: PersistentVolumeClaim
+    name: hsof-checkpoint-storage
+
+# Production ConfigMap patches
+- patch: |-
+    - op: replace
+      path: /data/HSOF_LOG_LEVEL
+      value: "WARN"
+    - op: replace
+      path: /data/HSOF_MAX_MEMORY_GB
+      value: "64"
+    - op: add
+      path: /data/HSOF_PRODUCTION_MODE
+      value: "true"
+  target:
+    kind: ConfigMap
+    name: hsof-config
+
+# Production-specific ConfigMaps
+configMapGenerator:
+- name: hsof-production-config
+  literals:
+  - HSOF_BACKUP_ENABLED=true
+  - HSOF_BACKUP_INTERVAL=3600
+  - HSOF_MONITORING_DETAILED=true
+  - HSOF_PERFORMANCE_LOGGING=true
+  - HSOF_SECURITY_ENHANCED=true
+
+# Production secrets (to be created manually or via external secret operator)
+secretGenerator: []
+
+# Production-specific resources
+resources:
+- production-ingress.yaml
+- production-monitoring.yaml

@@ -1,0 +1,175 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hsof-service-monitor
+  namespace: hsof-prod
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: monitoring
+    prometheus: production
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hsof
+      app.kubernetes.io/component: metrics-service
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 15s
+    scrapeTimeout: 10s
+    honorLabels: true
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_name]
+      targetLabel: pod
+    - sourceLabels: [__meta_kubernetes_pod_node_name]
+      targetLabel: node
+    - sourceLabels: [__meta_kubernetes_namespace]
+      targetLabel: namespace
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: hsof-pod-monitor
+  namespace: hsof-prod
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: pod-monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hsof
+      app.kubernetes.io/component: main-application
+  podMetricsEndpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_name]
+      targetLabel: pod
+    - sourceLabels: [__meta_kubernetes_pod_node_name]
+      targetLabel: node
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hsof-alerts
+  namespace: hsof-prod
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: alerting-rules
+    prometheus: production
+spec:
+  groups:
+  - name: hsof.gpu.rules
+    interval: 30s
+    rules:
+    - alert: HSOfGPUUtilizationLow
+      expr: hsof_gpu_utilization < 50
+      for: 5m
+      labels:
+        severity: warning
+        component: gpu
+      annotations:
+        summary: "HSOF GPU utilization is low"
+        description: "GPU {{ $labels.gpu }} utilization is {{ $value }}% for more than 5 minutes"
+    
+    - alert: HSOfGPUMemoryHigh
+      expr: (hsof_gpu_memory_used_bytes / hsof_gpu_memory_total_bytes) * 100 > 90
+      for: 2m
+      labels:
+        severity: critical
+        component: gpu
+      annotations:
+        summary: "HSOF GPU memory usage is high"
+        description: "GPU {{ $labels.gpu }} memory usage is {{ $value }}% for more than 2 minutes"
+    
+    - alert: HSOfGPUTemperatureHigh
+      expr: hsof_gpu_temperature_celsius > 85
+      for: 1m
+      labels:
+        severity: warning
+        component: gpu
+      annotations:
+        summary: "HSOF GPU temperature is high"
+        description: "GPU {{ $labels.gpu }} temperature is {{ $value }}°C"
+
+  - name: hsof.performance.rules
+    interval: 30s
+    rules:
+    - alert: HSOfModelInferenceLatencyHigh
+      expr: histogram_quantile(0.95, hsof_model_inference_duration_seconds_bucket) > 0.1
+      for: 5m
+      labels:
+        severity: warning
+        component: model
+      annotations:
+        summary: "HSOF model inference latency is high"
+        description: "95th percentile inference latency is {{ $value }}s for more than 5 minutes"
+    
+    - alert: HSOfStageExecutionTimeHigh
+      expr: histogram_quantile(0.90, hsof_stage_duration_seconds_bucket{stage="1"}) > 30
+      for: 1m
+      labels:
+        severity: critical
+        component: pipeline
+      annotations:
+        summary: "HSOF Stage 1 execution time exceeded"
+        description: "Stage 1 execution time 90th percentile is {{ $value }}s, exceeding 30s threshold"
+    
+    - alert: HSOfErrorRateHigh
+      expr: rate(hsof_model_inference_errors_total[5m]) > 0.05
+      for: 2m
+      labels:
+        severity: warning
+        component: model
+      annotations:
+        summary: "HSOF model error rate is high"
+        description: "Model error rate is {{ $value }} errors/sec over the last 5 minutes"
+
+  - name: hsof.availability.rules
+    interval: 30s
+    rules:
+    - alert: HSOfPodDown
+      expr: up{job="hsof-metrics"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        component: availability
+      annotations:
+        summary: "HSOF pod is down"
+        description: "HSOF pod {{ $labels.instance }} has been down for more than 1 minute"
+    
+    - alert: HSOfPodRestartingTooOften
+      expr: increase(kube_pod_container_status_restarts_total{container="hsof-main"}[1h]) > 3
+      for: 5m
+      labels:
+        severity: warning
+        component: availability
+      annotations:
+        summary: "HSOF pod restarting too often"
+        description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last hour"
+
+  - name: hsof.resource.rules
+    interval: 30s
+    rules:
+    - alert: HSOfMemoryUsageHigh
+      expr: (container_memory_working_set_bytes{container="hsof-main"} / container_spec_memory_limit_bytes{container="hsof-main"}) * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+        component: resources
+      annotations:
+        summary: "HSOF memory usage is high"
+        description: "Pod {{ $labels.pod }} memory usage is {{ $value }}% of limit"
+    
+    - alert: HSOfCPUUsageHigh
+      expr: rate(container_cpu_usage_seconds_total{container="hsof-main"}[5m]) * 100 > 80
+      for: 10m
+      labels:
+        severity: warning
+        component: resources
+      annotations:
+        summary: "HSOF CPU usage is high"
+        description: "Pod {{ $labels.pod }} CPU usage is {{ $value }}% for more than 10 minutes"

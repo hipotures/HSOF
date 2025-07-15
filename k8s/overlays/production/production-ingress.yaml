@@ -1,0 +1,98 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hsof-ingress
+  namespace: hsof-prod
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: ingress
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+spec:
+  tls:
+  - hosts:
+    - hsof.example.com
+    - api.hsof.example.com
+    secretName: hsof-tls-cert
+  
+  rules:
+  # Main API endpoint
+  - host: api.hsof.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: hsof-api
+            port:
+              number: 80
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: hsof-api
+            port:
+              number: 8080
+  
+  # Web interface (if applicable)
+  - host: hsof.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: hsof-api
+            port:
+              number: 80
+
+---
+# Metrics ingress for Prometheus scraping
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hsof-metrics-ingress
+  namespace: hsof-prod
+  labels:
+    app.kubernetes.io/name: hsof
+    app.kubernetes.io/component: metrics-ingress
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: hsof-metrics-auth
+    nginx.ingress.kubernetes.io/auth-realm: "HSOF Metrics - Restricted Access"
+    nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+spec:
+  tls:
+  - hosts:
+    - metrics.hsof.example.com
+    secretName: hsof-metrics-tls-cert
+  
+  rules:
+  - host: metrics.hsof.example.com
+    http:
+      paths:
+      - path: /metrics
+        pathType: Exact
+        backend:
+          service:
+            name: hsof-metrics
+            port:
+              number: 9090
