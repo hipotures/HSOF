@@ -28,6 +28,10 @@ using .WorkDistribution
 include("pcie_communication.jl")
 using .PCIeCommunication
 
+# GPU Synchronization for Multi-GPU Coordination
+include("gpu_synchronization.jl")
+using .GPUSynchronization
+
 # GPU Management exports
 export initialize_devices, get_device_info, validate_gpu_environment
 export GPUManager, DeviceManager, StreamManager, MemoryManager
@@ -49,6 +53,17 @@ export create_transfer_manager, select_top_candidates, transfer_candidates
 export enable_peer_access!, can_access_peer, get_transfer_stats
 export reset_buffer!, should_transfer, compress_candidates, decompress_candidates
 export add_candidates!, broadcast_candidates
+
+# GPU Synchronization exports
+export SyncManager, SyncState, SyncPhase, SyncBarrier, SyncEvent
+export create_sync_manager, set_phase!, wait_for_phase, signal_event!
+export wait_for_event, enter_barrier!, reset_barrier!, get_sync_state
+export acquire_lock!, release_lock!, with_lock, is_phase_complete
+export set_gpu_result!, get_gpu_result, get_all_results, clear_results!
+export register_gpu!, unregister_gpu!, get_active_gpus
+export reset_event!, update_sync_stats!
+# Export phase enum values
+export PHASE_INIT, PHASE_READY, PHASE_RUNNING, PHASE_SYNCING, PHASE_DONE, PHASE_ERROR
 
 # Module initialization
 function __init__()
