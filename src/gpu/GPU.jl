@@ -56,6 +56,10 @@ using .ResultAggregation
 include("scaling_efficiency.jl")
 using .ScalingEfficiency
 
+# Memory Optimization
+include("memory_optimization.jl")
+using .MemoryOptimization
+
 # GPU Management exports
 export initialize_devices, get_device_info, validate_gpu_environment
 export GPUManager, DeviceManager, StreamManager, MemoryManager
@@ -143,6 +147,12 @@ export ScalingBenchmark, BenchmarkConfig, ScalingMetrics, BenchmarkResult
 export create_benchmark, run_single_gpu_baseline, run_multi_gpu_benchmark
 export calculate_scaling_efficiency, identify_bottlenecks
 export run_scaling_experiments, generate_efficiency_report
+
+# Memory Optimization exports
+export MemoryProfile, AccessPattern, MemoryPool, CachedArray
+export profile_memory_access, optimize_data_layout, create_memory_pool
+export coalesced_read!, coalesced_write!, prefetch_data!
+export analyze_bandwidth_utilization, get_memory_stats
 
 # Module initialization
 function __init__()
