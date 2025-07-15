@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  hsof:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: production
+      args:
+        - JULIA_VERSION=1.10.5
+    image: hsof:latest
+    container_name: hsof-main
+    runtime: nvidia
+    environment:
+      # GPU Configuration
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - CUDA_VISIBLE_DEVICES=0,1
+      
+      # Julia Configuration
+      - JULIA_NUM_THREADS=16
+      - JULIA_CUDA_MEMORY_POOL=binned
+      - JULIA_CUDA_SOFT_MEMORY_LIMIT=0.9
+      
+      # Application Configuration
+      - HSOF_LOG_LEVEL=INFO
+      - HSOF_MAX_MEMORY_GB=32
+      - HSOF_RUN_MODE=default
+      
+      # Performance Settings
+      - HSOF_STAGE1_THREADS=16
+      - HSOF_STAGE2_GPU_BATCH_SIZE=1000
+      - HSOF_STAGE3_ENSEMBLE_SIZE=10
+      
+    volumes:
+      # Data persistence
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+      - ./results:/app/results
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+      
+    ports:
+      - "8080:8080"  # API endpoint
+      - "9090:9090"  # Metrics endpoint
+      
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
+        limits:
+          memory: 32G
+          
+    healthcheck:
+      test: ["CMD", "julia", "--project=/app", "/app/scripts/health_check.jl"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+      
+    restart: unless-stopped
+    
+  # Development variant with mounted source code
+  hsof-dev:
+    extends: hsof
+    build:
+      target: app-build
+    volumes:
+      - ../src:/app/src:ro
+      - ../test:/app/test:ro
+      - ../scripts:/app/scripts:ro
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+      - ./results:/app/results
+      - ./logs:/app/logs
+    environment:
+      - HSOF_RUN_MODE=interactive
+    profiles:
+      - dev
+      
+  # Benchmark runner service
+  hsof-benchmark:
+    extends: hsof
+    environment:
+      - HSOF_RUN_MODE=benchmark
+    command: ["--stages", "gpu,memory,latency,pipeline", "--gpu"]
+    profiles:
+      - benchmark
+      
+  # Test runner service
+  hsof-test:
+    extends: hsof
+    environment:
+      - HSOF_RUN_MODE=test
+    profiles:
+      - test
+
+# Named volumes for data persistence
+volumes:
+  hsof-data:
+  hsof-checkpoints:
+  hsof-results:
+  hsof-logs:
+  hsof-cache:
