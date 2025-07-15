@@ -4,167 +4,32 @@ using CUDA
 using Dates
 using Printf
 
-# Include the GPUMemoryLayout module
-include("gpu_memory_layout.jl")
-using .GPUMemoryLayout: WARP_SIZE
+export ProgressTracker, GPUProgress, ProgressCallback
+export create_progress_tracker, update_progress!, get_progress
+export cancel_operation!, is_cancelled, estimate_time_remaining
 
 """
-Progress tracking configuration
+GPU-side progress structure for atomic updates
 """
-struct ProgressConfig
-    update_interval_ms::Int32      # Milliseconds between progress updates
-    callback_enabled::Bool         # Enable progress callbacks
-    persist_to_disk::Bool          # Save progress for resumability
-    monitor_memory::Bool           # Track GPU memory usage
-    show_eta::Bool                 # Calculate and show ETA
-    progress_file::String          # Path to progress persistence file
+struct GPUProgress
+    processed_items::CuArray{Int32, 1}
+    total_items::CuArray{Int32, 1}
+    start_time::CuArray{Float64, 1}
+    cancelled::CuArray{Int32, 1}  # 0 = running, 1 = cancelled
 end
 
 """
-Create default progress configuration
+CPU-side progress tracker with callbacks
 """
-function create_progress_config(;
-                              update_interval_ms::Integer = 100,
-                              callback_enabled::Bool = true,
-                              persist_to_disk::Bool = false,
-                              monitor_memory::Bool = true,
-                              show_eta::Bool = true,
-                              progress_file::String = ".progress.json")
-    return ProgressConfig(
-        Int32(update_interval_ms),
-        callback_enabled,
-        persist_to_disk,
-        monitor_memory,
-        show_eta,
-        progress_file
-    )
-end
-
-"""
-Progress state structure
-"""
-mutable struct ProgressState
-    total_work::Int64              # Total units of work
-    completed_work::Int64          # Completed units
-    start_time::DateTime           # When processing started
-    last_update_time::DateTime     # Last progress update
-    current_phase::String          # Current processing phase
-    throughput::Float64            # Work units per second
-    gpu_memory_used::Int64         # Current GPU memory usage
-    gpu_memory_total::Int64        # Total GPU memory
-    is_cancelled::Bool             # Cancellation flag
-end
-
-"""
-GPU progress counters using atomic operations
-"""
-struct GPUProgressCounters
-    features_processed::CuArray{Int64, 1}     # Atomic counter for features
-    samples_processed::CuArray{Int64, 1}      # Atomic counter for samples
-    operations_completed::CuArray{Int64, 1}   # Generic operation counter
-    error_count::CuArray{Int64, 1}            # Error counter
-end
-
-"""
-Create GPU progress counters
-"""
-function create_gpu_counters()
-    return GPUProgressCounters(
-        CUDA.zeros(Int64, 1),
-        CUDA.zeros(Int64, 1),
-        CUDA.zeros(Int64, 1),
-        CUDA.zeros(Int64, 1)
-    )
-end
-
-"""
-Reset GPU counters
-"""
-function reset_counters!(counters::GPUProgressCounters)
-    fill!(counters.features_processed, 0)
-    fill!(counters.samples_processed, 0)
-    fill!(counters.operations_completed, 0)
-    fill!(counters.error_count, 0)
-    CUDA.synchronize()
-end
-
-"""
-GPU kernel for atomic progress increment
-"""
-function increment_progress_kernel!(
-    counter::CuDeviceArray{Int64, 1},
-    increment::Int64
-)
-    # Single thread updates the counter
-    if threadIdx().x == 1 && blockIdx().x == 1
-        CUDA.atomic_add!(pointer(counter, 1), increment)
-    end
-    return nothing
-end
-
-"""
-GPU kernel for batch progress update
-"""
-function batch_progress_update_kernel!(
-    features_counter::CuDeviceArray{Int64, 1},
-    samples_counter::CuDeviceArray{Int64, 1},
-    feature_increments::CuDeviceArray{Int32, 1},
-    n_blocks::Int32
-)
-    block_id = blockIdx().x
-    tid = threadIdx().x
-    
-    # Shared memory for block-level reduction
-    shared_features = @cuDynamicSharedMem(Int64, WARP_SIZE)
-    shared_samples = @cuDynamicSharedMem(Int64, WARP_SIZE, WARP_SIZE * sizeof(Int64))
-    
-    if block_id <= n_blocks
-        # Each thread in block accumulates its portion
-        local_features = Int64(0)
-        local_samples = Int64(0)
-        
-        if tid == 1
-            local_features = Int64(feature_increments[block_id])
-            local_samples = Int64(1000)  # Example: 1000 samples per feature
-        end
-        
-        # Warp-level reduction
-        warp_id = (tid - 1) ÷ WARP_SIZE
-        lane_id = (tid - 1) % WARP_SIZE
-        
-        # Reduce within warp using shuffle
-        for offset in (16, 8, 4, 2, 1)
-            local_features += shfl_down_sync(0xffffffff, local_features, offset)
-            local_samples += shfl_down_sync(0xffffffff, local_samples, offset)
-        end
-        
-        # First lane stores to shared memory
-        if lane_id == 0 && warp_id < WARP_SIZE
-            shared_features[warp_id + 1] = local_features
-            shared_samples[warp_id + 1] = local_samples
-        end
-        
-        sync_threads()
-        
-        # Final reduction by first warp
-        if tid <= WARP_SIZE
-            local_features = tid <= blockDim().x ÷ WARP_SIZE ? shared_features[tid] : Int64(0)
-            local_samples = tid <= blockDim().x ÷ WARP_SIZE ? shared_samples[tid] : Int64(0)
-            
-            for offset in (16, 8, 4, 2, 1)
-                local_features += shfl_down_sync(0xffffffff, local_features, offset)
-                local_samples += shfl_down_sync(0xffffffff, local_samples, offset)
-            end
-            
-            # Thread 1 updates global counters
-            if tid == 1
-                CUDA.atomic_add!(pointer(features_counter, 1), local_features)
-                CUDA.atomic_add!(pointer(samples_counter, 1), local_samples)
-            end
-        end
-    end
-    
-    return nothing
+mutable struct ProgressTracker
+    gpu_progress::GPUProgress
+    callback::Union{Function, Nothing}
+    callback_frequency::Float64  # seconds between callbacks
+    last_callback_time::Float64
+    description::String
+    start_time::DateTime
+    last_processed::Int32
+    processing_rate::Float64  # items per second
 end
 
 """
@@ -173,309 +38,339 @@ Progress callback function type
 const ProgressCallback = Function
 
 """
-Create default progress callback that prints to console
-"""
-function create_console_callback()
-    return function(state::ProgressState)
-        percentage = state.completed_work / state.total_work * 100
-        
-        # Calculate ETA
-        elapsed = Dates.value(state.last_update_time - state.start_time) / 1000.0  # seconds
-        if elapsed > 0 && state.completed_work > 0
-            rate = state.completed_work / elapsed
-            remaining = state.total_work - state.completed_work
-            eta_seconds = remaining / rate
-            eta_str = format_duration(eta_seconds)
-        else
-            eta_str = "calculating..."
-        end
-        
-        # Memory info
-        mem_used_gb = state.gpu_memory_used / (1024^3)
-        mem_total_gb = state.gpu_memory_total / (1024^3)
-        mem_percentage = state.gpu_memory_used / state.gpu_memory_total * 100
-        
-        # Print progress line
-        @printf("\r[%s] %s: %.1f%% (%d/%d) | ETA: %s | GPU Mem: %.1f/%.1f GB (%.1f%%) | %.0f items/s",
-                Dates.format(now(), "HH:MM:SS"),
-                state.current_phase,
-                percentage,
-                state.completed_work,
-                state.total_work,
-                eta_str,
-                mem_used_gb,
-                mem_total_gb,
-                mem_percentage,
-                state.throughput)
-        
-        # Flush output
-        flush(stdout)
-    end
-end
-
-"""
-Format duration in seconds to human-readable string
-"""
-function format_duration(seconds::Float64)
-    if seconds < 60
-        return @sprintf("%.0fs", seconds)
-    elseif seconds < 3600
-        minutes = floor(seconds / 60)
-        secs = seconds % 60
-        return @sprintf("%.0fm %.0fs", minutes, secs)
-    else
-        hours = floor(seconds / 3600)
-        minutes = floor((seconds % 3600) / 60)
-        return @sprintf("%.0fh %.0fm", hours, minutes)
-    end
-end
-
-"""
-Update progress state from GPU counters
-"""
-function update_progress_state!(
-    state::ProgressState,
-    counters::GPUProgressCounters,
-    phase::String = ""
-)
-    # Get current counter values
-    features = CUDA.@allowscalar counters.features_processed[1]
-    samples = CUDA.@allowscalar counters.samples_processed[1]
-    operations = CUDA.@allowscalar counters.operations_completed[1]
-    
-    # Update completed work (use most relevant counter)
-    state.completed_work = max(features, operations)
-    
-    # Update phase if provided
-    if !isempty(phase)
-        state.current_phase = phase
-    end
-    
-    # Calculate throughput
-    current_time = now()
-    time_delta = Dates.value(current_time - state.start_time) / 1000.0  # seconds since start
-    if time_delta > 0 && state.completed_work > 0
-        state.throughput = state.completed_work / time_delta
-    end
-    
-    state.last_update_time = current_time
-    
-    # Update GPU memory if monitoring
-    if state.gpu_memory_used >= 0
-        state.gpu_memory_used = CUDA.used_memory()
-        state.gpu_memory_total = CUDA.total_memory()
-    end
-end
-
-"""
-Progress tracker with automatic updates
-"""
-mutable struct ProgressTracker
-    state::ProgressState
-    counters::GPUProgressCounters
-    config::ProgressConfig
-    callback::ProgressCallback
-    update_event::CuEvent
-    last_callback_time::DateTime
-    active::Bool
-end
-
-"""
-Create progress tracker
+Create a new progress tracker for GPU operations
 """
 function create_progress_tracker(
-    total_work::Integer,
-    config::ProgressConfig = create_progress_config();
-    callback::ProgressCallback = create_console_callback(),
-    phase::String = "Processing"
+    total_items::Int;
+    description::String = "Processing",
+    callback::Union{Function, Nothing} = nothing,
+    callback_frequency::Float64 = 0.5  # seconds
 )
-    # Get initial GPU memory info
-    gpu_used = CUDA.used_memory()
-    gpu_total = CUDA.total_memory()
+    # Allocate GPU memory for progress tracking
+    processed = CUDA.zeros(Int32, 1)
+    total = CuArray([Int32(total_items)])
+    start_time = CuArray([time()])
+    cancelled = CUDA.zeros(Int32, 1)
     
-    state = ProgressState(
-        Int64(total_work),
-        0,
-        now(),
-        now(),
-        phase,
-        0.0,
-        gpu_used,
-        gpu_total,
-        false
-    )
-    
-    counters = create_gpu_counters()
-    update_event = CuEvent()
+    gpu_progress = GPUProgress(processed, total, start_time, cancelled)
     
     return ProgressTracker(
-        state,
-        counters,
-        config,
+        gpu_progress,
         callback,
-        update_event,
+        callback_frequency,
+        time(),
+        description,
         now(),
-        true
+        Int32(0),
+        0.0
     )
 end
 
 """
-Check if progress update is needed and perform callback
+GPU kernel helper to update progress atomically
 """
-function check_progress_update!(tracker::ProgressTracker)
-    if !tracker.active || !tracker.config.callback_enabled
-        return
-    end
+function gpu_update_progress!(progress::GPUProgress, items_processed::Int32)
+    CUDA.@atomic progress.processed_items[1] += items_processed
+    return nothing
+end
+
+"""
+Check if operation has been cancelled
+"""
+function gpu_check_cancelled(progress::GPUProgress)
+    return progress.cancelled[1] != Int32(0)
+end
+
+"""
+CPU-side progress update with callback handling
+"""
+function update_progress!(tracker::ProgressTracker; force_callback::Bool = false)
+    current_time = time()
     
-    current_time = now()
-    time_since_update = Dates.value(current_time - tracker.last_callback_time)
-    
-    if time_since_update >= tracker.config.update_interval_ms
-        # Update state from GPU counters
-        update_progress_state!(tracker.state, tracker.counters)
+    # Check if we should invoke callback
+    if !isnothing(tracker.callback) && 
+       (force_callback || current_time - tracker.last_callback_time >= tracker.callback_frequency)
         
-        # Call the callback
-        tracker.callback(tracker.state)
+        # Get current progress from GPU
+        processed = Array(tracker.gpu_progress.processed_items)[1]
+        total = Array(tracker.gpu_progress.total_items)[1]
         
+        # Calculate processing rate
+        elapsed = current_time - tracker.start_time.instant.periods.value / 1e9
+        if elapsed > 0 && processed > tracker.last_processed
+            tracker.processing_rate = (processed - tracker.last_processed) / 
+                                    (current_time - tracker.last_callback_time)
+        end
+        tracker.last_processed = processed
+        
+        # Create progress info
+        progress_info = Dict(
+            :processed => processed,
+            :total => total,
+            :percentage => total > 0 ? 100.0 * processed / total : 0.0,
+            :elapsed_seconds => elapsed,
+            :rate => tracker.processing_rate,
+            :eta_seconds => estimate_time_remaining(tracker),
+            :description => tracker.description
+        )
+        
+        # Invoke callback
+        tracker.callback(progress_info)
         tracker.last_callback_time = current_time
-        
-        # Persist if enabled
-        if tracker.config.persist_to_disk
-            save_progress(tracker)
-        end
     end
 end
 
 """
-Mark progress tracker as complete
+Get current progress information
 """
-function complete_progress!(tracker::ProgressTracker)
-    tracker.state.completed_work = tracker.state.total_work
-    update_progress_state!(tracker.state, tracker.counters, "Complete")
-    tracker.callback(tracker.state)
-    tracker.active = false
-    println()  # New line after progress
+function get_progress(tracker::ProgressTracker)
+    processed = Array(tracker.gpu_progress.processed_items)[1]
+    total = Array(tracker.gpu_progress.total_items)[1]
+    elapsed = (now() - tracker.start_time).value / 1000.0  # seconds
+    
+    return (
+        processed = processed,
+        total = total,
+        percentage = total > 0 ? 100.0 * processed / total : 0.0,
+        elapsed_seconds = elapsed,
+        rate = tracker.processing_rate,
+        eta_seconds = estimate_time_remaining(tracker)
+    )
 end
 
 """
-Cancel progress tracking
+Estimate time remaining based on current processing rate
 """
-function cancel_progress!(tracker::ProgressTracker)
-    tracker.state.is_cancelled = true
-    tracker.active = false
-    println("\nProgress cancelled")
+function estimate_time_remaining(tracker::ProgressTracker)
+    processed = Array(tracker.gpu_progress.processed_items)[1]
+    total = Array(tracker.gpu_progress.total_items)[1]
+    
+    if tracker.processing_rate > 0 && processed < total
+        remaining = total - processed
+        return remaining / tracker.processing_rate
+    else
+        return Inf
+    end
 end
 
 """
-Save progress state to disk for resumability
+Cancel a running GPU operation
 """
-function save_progress(tracker::ProgressTracker)
-    if !tracker.config.persist_to_disk
+function cancel_operation!(tracker::ProgressTracker)
+    copyto!(tracker.gpu_progress.cancelled, [Int32(1)])
+    CUDA.synchronize()
+end
+
+"""
+Check if operation has been cancelled
+"""
+function is_cancelled(tracker::ProgressTracker)
+    return Array(tracker.gpu_progress.cancelled)[1] != Int32(0)
+end
+
+"""
+Progress-aware variance kernel with cancellation support
+"""
+function variance_kernel_with_progress!(
+    variances::CuDeviceVector{Float32},
+    X::CuDeviceMatrix{Float32},
+    n_features::Int32,
+    n_samples::Int32,
+    progress::GPUProgress,
+    update_frequency::Int32 = Int32(10)  # Update every N features
+)
+    feat_idx = Int32(blockIdx().x)
+    tid = Int32(threadIdx().x)
+    block_size = Int32(blockDim().x)
+    
+    if feat_idx > n_features
         return
     end
     
-    # Create progress data dictionary
-    progress_data = Dict(
-        "total_work" => tracker.state.total_work,
-        "completed_work" => tracker.state.completed_work,
-        "current_phase" => tracker.state.current_phase,
-        "start_time" => string(tracker.state.start_time),
-        "last_update_time" => string(tracker.state.last_update_time),
-        "is_cancelled" => tracker.state.is_cancelled
-    )
+    # Check cancellation at start
+    if gpu_check_cancelled(progress)
+        return
+    end
     
-    # Write to file (simplified - in practice use JSON)
-    open(tracker.config.progress_file, "w") do f
-        for (k, v) in progress_data
-            println(f, "$k=$v")
+    # Regular variance calculation
+    if tid == 1
+        sum = 0.0f0
+        sum_sq = 0.0f0
+        
+        for i in 1:n_samples
+            val = X[feat_idx, i]
+            sum += val
+            sum_sq += val * val
         end
-    end
-end
-
-"""
-Load progress state from disk
-"""
-function load_progress(config::ProgressConfig)
-    if !isfile(config.progress_file)
-        return nothing
-    end
-    
-    progress_data = Dict{String, Any}()
-    
-    # Read from file (simplified)
-    open(config.progress_file, "r") do f
-        for line in eachline(f)
-            if contains(line, "=")
-                k, v = split(line, "=", limit=2)
-                progress_data[k] = v
+        
+        mean = sum / Float32(n_samples)
+        variance = (sum_sq / Float32(n_samples)) - mean * mean
+        variances[feat_idx] = max(variance, 0.0f0)
+        
+        # Update progress atomically
+        if feat_idx % update_frequency == 0
+            gpu_update_progress!(progress, update_frequency)
+        elseif feat_idx == n_features
+            # Final update for remaining features
+            remaining = n_features % update_frequency
+            if remaining > 0
+                gpu_update_progress!(progress, remaining)
             end
         end
     end
     
-    # Convert back to ProgressState
-    return progress_data
+    return nothing
 end
 
 """
-Macro for progress-tracked GPU kernel launch
+Progress-aware MI kernel
 """
-macro progress_kernel(tracker, kernel_call)
-    return quote
-        # Launch kernel
-        $(esc(kernel_call))
-        
-        # Record event for timing
-        CUDA.record($(esc(tracker)).update_event)
-        
-        # Check if update needed
-        check_progress_update!($(esc(tracker)))
+function mi_kernel_with_progress!(
+    mi_scores::CuDeviceVector{Float32},
+    X::CuDeviceMatrix{Float32},
+    y::CuDeviceVector{Int32},
+    n_features::Int32,
+    n_samples::Int32,
+    n_bins::Int32,
+    n_classes::Int32,
+    progress::GPUProgress,
+    update_frequency::Int32 = Int32(5)
+)
+    feat_idx = Int32(blockIdx().x)
+    
+    if feat_idx > n_features
+        return
     end
+    
+    # Check cancellation
+    if gpu_check_cancelled(progress)
+        return
+    end
+    
+    # Simplified MI calculation (actual implementation would be more complex)
+    if threadIdx().x == 1
+        # ... MI calculation logic ...
+        mi_scores[feat_idx] = 0.1f0  # Placeholder
+        
+        # Update progress
+        if feat_idx % update_frequency == 0
+            gpu_update_progress!(progress, update_frequency)
+        elseif feat_idx == n_features
+            remaining = n_features % update_frequency
+            if remaining > 0
+                gpu_update_progress!(progress, remaining)
+            end
+        end
+    end
+    
+    return nothing
 end
 
 """
-Example usage function for progress tracking
+Example usage of progress tracking
 """
-function example_gpu_computation_with_progress(n_features::Integer, n_samples::Integer)
-    # Create progress tracker
-    config = create_progress_config(update_interval_ms=100)
-    tracker = create_progress_tracker(n_features, config, phase="Feature Processing")
+function example_progress_usage()
+    n_features = 10000
+    n_samples = 5000
     
-    # Simulated GPU work
-    threads = 256
-    blocks = cld(n_features, threads)
+    # Create test data
+    X = CUDA.randn(Float32, n_features, n_samples)
+    variances = CUDA.zeros(Float32, n_features)
     
-    feature_increments = CUDA.ones(Int32, blocks)
-    
-    # Launch kernels with progress tracking
-    for batch in 1:10
-        @progress_kernel tracker begin
-            @cuda threads=threads blocks=blocks shmem=2*WARP_SIZE*sizeof(Int64) batch_progress_update_kernel!(
-                tracker.counters.features_processed,
-                tracker.counters.samples_processed,
-                feature_increments,
-                Int32(blocks)
+    # Create progress tracker with callback
+    tracker = create_progress_tracker(
+        n_features;
+        description = "Calculating variances",
+        callback = function(info)
+            @printf("\r%s: %d/%d (%.1f%%) - %.1f features/sec - ETA: %.1fs",
+                info[:description],
+                info[:processed],
+                info[:total],
+                info[:percentage],
+                info[:rate],
+                info[:eta_seconds]
             )
+        end,
+        callback_frequency = 0.1  # Update every 100ms
+    )
+    
+    # Launch kernel with progress tracking
+    @cuda threads=256 blocks=n_features variance_kernel_with_progress!(
+        variances, X, Int32(n_features), Int32(n_samples),
+        tracker.gpu_progress, Int32(100)
+    )
+    
+    # Monitor progress
+    while true
+        update_progress!(tracker)
+        
+        progress = get_progress(tracker)
+        if progress.processed >= progress.total
+            update_progress!(tracker, force_callback=true)
+            println()  # New line after progress
+            break
         end
         
-        # Simulate some work
-        sleep(0.1)
+        # Check for cancellation (could be triggered by user input)
+        if is_cancelled(tracker)
+            println("\nOperation cancelled!")
+            break
+        end
         
-        # Manual progress check
-        check_progress_update!(tracker)
+        sleep(0.05)  # Small sleep to avoid busy waiting
     end
     
-    # Mark complete
-    complete_progress!(tracker)
+    CUDA.synchronize()
+    
+    # Final progress report
+    progress = get_progress(tracker)
+    println("Completed: $(progress.processed) features in $(round(progress.elapsed_seconds, digits=2))s")
+    println("Average rate: $(round(progress.processed / progress.elapsed_seconds, digits=1)) features/sec")
 end
 
-# Export types and functions
-export ProgressConfig, create_progress_config
-export ProgressState, GPUProgressCounters, create_gpu_counters
-export ProgressTracker, create_progress_tracker
-export check_progress_update!, complete_progress!, cancel_progress!
-export @progress_kernel
-export increment_progress_kernel!, batch_progress_update_kernel!
-export save_progress, load_progress
-export reset_counters!, update_progress_state!
+"""
+Batch progress tracker for multiple kernel launches
+"""
+mutable struct BatchProgressTracker
+    trackers::Vector{ProgressTracker}
+    total_items::Int
+    description::String
+    callback::Union{Function, Nothing}
+end
 
-end # module ProgressTracking
+"""
+Create a batch progress tracker for multiple operations
+"""
+function create_batch_tracker(
+    operations::Vector{Tuple{String, Int}};
+    callback::Union{Function, Nothing} = nothing
+)
+    trackers = ProgressTracker[]
+    total = 0
+    
+    for (desc, items) in operations
+        push!(trackers, create_progress_tracker(items; description=desc))
+        total += items
+    end
+    
+    return BatchProgressTracker(trackers, total, "Batch processing", callback)
+end
+
+"""
+Get combined progress for batch operations
+"""
+function get_batch_progress(batch::BatchProgressTracker)
+    total_processed = 0
+    for tracker in batch.trackers
+        progress = get_progress(tracker)
+        total_processed += progress.processed
+    end
+    
+    return (
+        processed = total_processed,
+        total = batch.total_items,
+        percentage = 100.0 * total_processed / batch.total_items
+    )
+end
+
+end # module
