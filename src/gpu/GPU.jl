@@ -1,26 +1,28 @@
 module GPU
 
+using CUDA
+
 # GPU Management and Configuration
 include("gpu_manager.jl")
-include("device_manager.jl")
-include("stream_manager.jl")
 include("memory_manager.jl")
+include("stream_manager.jl")
+
+# Re-export main functionality from included modules
+using .GPUManager
+using .MemoryManager
+using .StreamManager
+
+# Now include device_manager which depends on the above modules
+include("device_manager.jl")
+using .DeviceManager
 
 # MCTS GPU Implementation
 include("mcts_gpu.jl")
-
-# Re-export main functionality
-using .GPUManager
-using .DeviceManager
-using .StreamManager
-using .MemoryManager
 using .MCTSGPU
 
 # GPU Management exports
-export detect_gpus, select_device, get_device_info, initialize_gpu
-export DeviceInfo, DeviceSelector, GPUSelector
-export StreamPool, get_stream, return_stream, synchronize_streams
-export set_memory_limit, get_memory_info, allocate_gpu_memory, free_gpu_memory
+export initialize_devices, get_device_info, validate_gpu_environment
+export GPUManager, DeviceManager, StreamManager, MemoryManager
 
 # MCTS GPU exports
 export MCTSGPUEngine, initialize!, start!, stop!, get_statistics
@@ -30,14 +32,16 @@ export select_features, get_best_features, reset_tree!
 function __init__()
     if CUDA.functional()
         # Initialize GPU subsystem
-        devices = detect_gpus()
-        if !isempty(devices)
-            println("HSOF GPU Module initialized with $(length(devices)) GPU(s)")
-            for (i, dev) in enumerate(devices)
-                println("  GPU $i: $(dev.name) ($(dev.memory_gb)GB)")
+        try
+            gpu_manager = GPUManager.initialize()
+            device_count = GPUManager.device_count()
+            println("HSOF GPU Module initialized with $(device_count) GPU(s)")
+            for i in 0:device_count-1
+                dev = GPUManager.get_device(i)
+                println("  GPU $i: $(dev.name) ($(round(dev.total_memory/1024^3, digits=2))GB)")
             end
-        else
-            @warn "No CUDA-capable GPUs detected"
+        catch e
+            @warn "Failed to initialize GPU manager: $e"
         end
     else
         @warn "CUDA.jl not functional - GPU features disabled"
