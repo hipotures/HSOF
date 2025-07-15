@@ -36,6 +36,10 @@ using .GPUSynchronization
 include("dataset_storage.jl")
 using .DatasetStorage
 
+# Fault Tolerance for Multi-GPU
+include("fault_tolerance.jl")
+using .FaultTolerance
+
 # GPU Management exports
 export initialize_devices, get_device_info, validate_gpu_environment
 export GPUManager, DeviceManager, StreamManager, MemoryManager
@@ -75,6 +79,20 @@ export create_dataset_manager, replicate_dataset!, get_dataset_replica
 export update_dataset!, get_memory_usage, has_sufficient_memory
 export load_dataset_to_gpu!, clear_dataset!, sync_datasets!
 export get_feature_column, get_sample_batch, get_dataset_info
+
+# Fault Tolerance exports
+export GPUHealthMonitor, GPUStatus, FailureMode, CheckpointManager
+export create_health_monitor, start_monitoring!, stop_monitoring!
+export check_gpu_health, is_gpu_healthy, get_gpu_status
+export register_error_callback!, handle_gpu_error
+export create_checkpoint_manager, save_checkpoint, restore_checkpoint
+export redistribute_work!, enable_graceful_degradation!
+export get_failure_statistics, reset_failure_count
+# Export status enum values
+export GPU_HEALTHY, GPU_DEGRADED, GPU_FAILING, GPU_FAILED, GPU_RECOVERING
+# Export failure mode enum values
+export NO_FAILURE, CUDA_ERROR, MEMORY_ERROR, TIMEOUT_ERROR
+export HEARTBEAT_FAILURE, THERMAL_THROTTLE, POWER_LIMIT
 
 # Module initialization
 function __init__()
