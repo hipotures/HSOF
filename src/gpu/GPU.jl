@@ -40,6 +40,10 @@ using .DatasetStorage
 include("fault_tolerance.jl")
 using .FaultTolerance
 
+# Performance Monitoring for Multi-GPU
+include("performance_monitoring.jl")
+using .PerformanceMonitoring
+
 # GPU Management exports
 export initialize_devices, get_device_info, validate_gpu_environment
 export GPUManager, DeviceManager, StreamManager, MemoryManager
@@ -93,6 +97,17 @@ export GPU_HEALTHY, GPU_DEGRADED, GPU_FAILING, GPU_FAILED, GPU_RECOVERING
 # Export failure mode enum values
 export NO_FAILURE, CUDA_ERROR, MEMORY_ERROR, TIMEOUT_ERROR
 export HEARTBEAT_FAILURE, THERMAL_THROTTLE, POWER_LIMIT
+
+# Performance Monitoring exports
+export PerformanceMonitor, GPUMetrics, KernelProfile, MemoryMetrics
+export create_performance_monitor, start_monitoring!, stop_monitoring!
+export record_kernel_start!, record_kernel_end!, get_kernel_stats
+export update_gpu_metrics!, get_gpu_metrics, get_all_metrics
+export detect_anomalies, get_performance_summary
+export log_performance_data, set_log_level!
+export reset_metrics!, export_metrics
+# Export log level enum values
+export LOG_NONE, LOG_ERROR, LOG_WARN, LOG_INFO, LOG_DEBUG, LOG_TRACE
 
 # Module initialization
 function __init__()
