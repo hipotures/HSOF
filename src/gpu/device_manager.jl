@@ -1,10 +1,6 @@
 # GPU Device Manager Module
 # Main entry point for GPU detection and initialization
 
-include("gpu_manager.jl")
-include("memory_manager.jl")
-include("stream_manager.jl")
-
 module DeviceManager
 
 using ..GPUManager
