@@ -363,10 +363,17 @@ function start_health_server(; host="0.0.0.0", port=8080)
     HTTP.register!(router, "/health", health_handler)
     HTTP.register!(router, "/health/*", health_handler)
     
-    # Add metrics endpoint placeholder
-    HTTP.register!(router, "/metrics") do req
-        # This would be implemented by the Prometheus exporter module
-        HTTP.Response(200, "# Metrics endpoint - to be implemented")
+    # Add metrics endpoint - import Prometheus module
+    try
+        include("prometheus.jl")
+        using .Prometheus
+        HTTP.register!(router, "/metrics", Prometheus.metrics_handler)
+        @info "Prometheus metrics endpoint enabled at /metrics"
+    catch e
+        @warn "Failed to load Prometheus module, metrics endpoint disabled" exception=e
+        HTTP.register!(router, "/metrics") do req
+            HTTP.Response(503, "Prometheus metrics not available")
+        end
     end
     
     try
