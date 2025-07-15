@@ -298,6 +298,65 @@ Key interaction detection methods:
 - **Partial Dependence**: Visualizes interaction effects on predictions
 - **Performance Degradation**: Reveals synergistic feature pairs
 
+### 7. Final Feature Ranking and Selection (`feature_ranking.jl`)
+
+Comprehensive feature ranking and selection system that combines multiple importance methods:
+
+```julia
+# Create feature ranker
+ranking_config = RankingConfig(
+    use_shap = true,
+    use_permutation = true,
+    use_interactions = true,
+    shap_weight = 0.35,
+    permutation_weight = 0.25,
+    interaction_weight = 0.20,
+    aggregation_method = :weighted_mean
+)
+
+ranker = FeatureRanker(n_features, ranking_config, feature_names=feature_names)
+
+# Rank features using multiple importance methods
+ranking_result = rank_features(ranker, importance_results, 
+                             interaction_matrix=interaction_matrix)
+
+# Pareto-optimal selection
+selection_config = SelectionConfig(
+    method = :pareto,
+    constraint_config = ConstraintConfig(
+        must_include = [1, 2],      # Domain knowledge
+        must_exclude = [10, 15],    # Expensive features
+        min_features = 10,
+        max_features = 20,
+        correlation_threshold = 0.85
+    )
+)
+
+selection_result = select_features(ranker, ranking_result, X, y, 
+                                 models=models, config=selection_config)
+
+# Forward selection with early stopping
+forward_config = SelectionConfig(
+    method = :forward,
+    early_stopping_rounds = 3,
+    performance_metric = :accuracy
+)
+
+# Ensemble voting across multiple models
+selected_features, votes = ensemble_feature_voting(
+    [ranking1, ranking2, ranking3],
+    voting_method = :borda,
+    top_k = 15
+)
+```
+
+Key features:
+- **Multiple Aggregation Methods**: Weighted mean, rank aggregation, Borda count
+- **Selection Algorithms**: Pareto-optimal, forward selection, ensemble voting
+- **Constraint Handling**: Must-include/exclude features, correlation threshold
+- **Stability Analysis**: Feature consistency across CV folds
+- **Comprehensive Reporting**: Detailed selection reports with visualizations
+
 ## Future Enhancements
 
 1. **Hyperparameter Optimization**: Automated tuning with MLJ's tuning interface
