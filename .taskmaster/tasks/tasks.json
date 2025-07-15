@@ -1074,7 +1074,7 @@
               2
             ],
             "details": "Implement random feature subsampling with 80% selection per tree using different random seeds. Create exploration constant variation system assigning values between 0.5-2.0 to each tree. Build initial state randomization giving trees different starting feature selections. Implement feature masking diversity preventing trees from selecting identical feature subsets. Design diversity metrics tracking feature overlap and selection patterns across ensemble.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -1085,7 +1085,7 @@
               1
             ],
             "details": "Create metamodel interface accepting feature subsets and returning performance predictions. Implement batched metamodel evaluation for multiple candidate feature sets. Build caching system storing metamodel predictions to avoid redundant evaluations. Design fallback mechanism using real evaluation when metamodel confidence is low. Implement metamodel update trigger when prediction accuracy degrades.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -1097,7 +1097,7 @@
               5
             ],
             "details": "Create feature mask data structure efficiently tracking available features per tree. Implement mask update logic when features are selected or permanently rejected. Build mask propagation system ensuring child nodes inherit parent constraints. Design mask merging algorithm for combining constraints from multiple trees. Implement mask validation ensuring minimum features remain available for selection.",
-            "status": "pending",
+            "status": "in-progress",
             "testStrategy": ""
           },
           {
@@ -1763,7 +1763,7 @@
     ],
     "metadata": {
       "created": "2025-07-14T16:41:00.071Z",
-      "updated": "2025-07-15T05:49:53.379Z",
+      "updated": "2025-07-15T06:03:19.306Z",
       "description": "Tasks for master context"
     }
   }
