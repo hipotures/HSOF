@@ -40,7 +40,8 @@ using .GPUStatusPanel
         @test history.sample_count == 0
         
         # Create mock monitor
-        monitor = GPUMonitor.create_gpu_monitor([1])
+        config = GPUMonitor.GPUMonitorConfig()
+        monitor = GPUMonitor.create_gpu_monitor(config)
         
         # Update history
         GPUStatusPanel.update_stats_history!(history, monitor, 1)

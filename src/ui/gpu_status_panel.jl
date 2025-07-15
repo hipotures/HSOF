@@ -272,12 +272,13 @@ function render_utilization_bar(utilization::Float64, width::Int, theme::ThemeCo
     
     # Create bar
     filled = round(Int, utilization / 100 * bar_width)
-    bar_chars = "█" ^ filled * "░" ^ (bar_width - filled)
+    filled_str = "█" ^ filled
+    empty_str = "░" ^ (bar_width - filled)
     
     # Apply color based on utilization
     color = get_color(theme, :gpu_utilization, utilization)
-    colored_bar = apply_theme_color(bar_chars[1:filled], color) * 
-                  apply_theme_color(bar_chars[filled+1:end], get_status_color(theme, :dim))
+    colored_bar = apply_theme_color(filled_str, color) * 
+                  apply_theme_color(empty_str, get_status_color(theme, :dim))
     
     return @sprintf("%s [%s]", label, colored_bar)
 end
@@ -373,7 +374,8 @@ function render_power_display(power_draw::Float64, power_limit::Float64, width::
     
     # Simple bar for power
     filled = round(Int, percent / 100 * bar_width)
-    bar = "▪" ^ filled * "·" ^ (bar_width - filled)
+    filled_str = "▪" ^ filled
+    empty_str = "·" ^ (bar_width - filled)
     
     # Color based on power usage
     color = if percent > 95
@@ -384,8 +386,8 @@ function render_power_display(power_draw::Float64, power_limit::Float64, width::
         get_status_color(theme, :normal)
     end
     
-    colored_bar = apply_theme_color(bar[1:filled], color) * 
-                  apply_theme_color(bar[filled+1:end], get_status_color(theme, :dim))
+    colored_bar = apply_theme_color(filled_str, color) * 
+                  apply_theme_color(empty_str, get_status_color(theme, :dim))
     
     return @sprintf("%s [%s]", label, colored_bar)
 end
@@ -625,7 +627,8 @@ function render_mini_bar(value::Float64, width::Int, theme::ThemeConfig)
     end
     
     filled = round(Int, value / 100 * width)
-    bar = "▰" ^ filled * "▱" ^ (width - filled)
+    filled_str = "▰" ^ filled
+    empty_str = "▱" ^ (width - filled)
     
     # Determine color
     color = if value > 90
@@ -636,8 +639,8 @@ function render_mini_bar(value::Float64, width::Int, theme::ThemeConfig)
         get_status_color(theme, :normal)
     end
     
-    return apply_theme_color(bar[1:filled], color) * 
-           apply_theme_color(bar[filled+1:end], get_status_color(theme, :dim))
+    return apply_theme_color(filled_str, color) * 
+           apply_theme_color(empty_str, get_status_color(theme, :dim))
 end
 
 end # module
