@@ -110,6 +110,11 @@ function generate_metamodel_training_data(X::Matrix{Float32}, y::Vector{Float32}
     n_features = size(X, 2)
     max_features = min(max_features, n_features)
     
+    # Move data to GPU once, before the loop
+    println("  Moving data to GPU...")
+    X_gpu = X |> gpu
+    y_gpu = y |> gpu
+    
     # Pre-allocate arrays for thread-safe parallel processing
     feature_combinations = Vector{Vector{Float32}}(undef, n_samples)
     true_scores = Vector{Float32}(undef, n_samples)
@@ -133,11 +138,13 @@ function generate_metamodel_training_data(X::Matrix{Float32}, y::Vector{Float32}
         mask = zeros(Float32, n_features)
         mask[selected_indices] .= 1.0f0
         
-        # Extract subset
-        X_subset = X[:, selected_indices]
+        # Extract subset on GPU then transfer to CPU for XGBoost
+        X_subset_gpu = X_gpu[:, selected_indices]
+        X_subset_cpu = Array(X_subset_gpu)  # Transfer only the subset
+        y_cpu = Array(y_gpu)  # Transfer labels once per iteration
         
-        # Evaluate with XGBoost
-        score = evaluate_with_xgboost(X_subset, y; xgb_params=xgb_params)
+        # Evaluate with XGBoost (will use GPU internally)
+        score = evaluate_with_xgboost(X_subset_cpu, y_cpu; xgb_params=xgb_params)
         
         # Store results (thread-safe by index)
         feature_combinations[i] = mask
@@ -165,8 +172,8 @@ end
 Quick XGBoost evaluation for metamodel training.
 Returns cross-validation accuracy/R² score.
 """
-function evaluate_with_xgboost(X::Matrix{Float32}, y::Vector{Float32}; folds::Int=3, xgb_params::Dict=Dict())
-    # Keep data on CPU - XGBoost will handle GPU internally via device parameter
+function evaluate_with_xgboost(X::Union{Matrix{Float32}, CuMatrix{Float32}}, y::Union{Vector{Float32}, CuVector{Float32}}; folds::Int=3, xgb_params::Dict=Dict())
+    # XGBoost.jl can work directly with GPU arrays when tree_method="gpu_hist"
     n_samples = size(X, 1)
     
     # For metamodel training, always use simple split for speed
@@ -225,14 +232,20 @@ end
 """
 Simple XGBoost evaluation for small datasets.
 """
-function simple_xgboost_evaluation(X::Matrix{Float32}, y::Vector{Float32}; xgb_params::Dict=Dict())
+function simple_xgboost_evaluation(X::Union{Matrix{Float32}, CuMatrix{Float32}}, y::Union{Vector{Float32}, CuVector{Float32}}; xgb_params::Dict=Dict())
     
     n_samples = size(X, 1)
     split_idx = div(n_samples, 2)
     
-    X_train, X_test = X[1:split_idx, :], X[(split_idx+1):end, :]
-    y_train, y_test = y[1:split_idx], y[(split_idx+1):end]
+    # Convert GPU arrays to CPU for XGBoost.jl compatibility
+    # XGBoost will still use GPU internally via tree_method
+    X_cpu = X isa CuMatrix ? Array(X) : X
+    y_cpu = y isa CuVector ? Array(y) : y
     
+    X_train, X_test = X_cpu[1:split_idx, :], X_cpu[(split_idx+1):end, :]
+    y_train, y_test = y_cpu[1:split_idx], y_cpu[(split_idx+1):end]
+    
+    # Create DMatrix with CPU arrays
     dtrain = XGBoost.DMatrix(X_train, label=y_train)
     # Merge default params with provided params
     # Set nthread based on whether we're running parallel or sequential
@@ -242,23 +255,20 @@ function simple_xgboost_evaluation(X::Matrix{Float32}, y::Vector{Float32}; xgb_p
         :max_depth => 6,
         :eta => 0.1,
         :objective => "binary:logistic",
-        :device => "cuda",  # Explicitly specify GPU
-        :tree_method => "hist",  # Required for GPU
+        :tree_method => "gpu_hist",  # Always use GPU acceleration
         :nthread => xgb_threads,  # 1 thread if parallel Julia, all threads if sequential
         :watchlist => (;)
     )
-    # Debug: print actual thread count being used
-    if get(xgb_params, "debug", false)
-        println("    XGBoost config: nthread=$xgb_threads, device=cuda")
-    end
     # Convert string keys to symbols if needed
     xgb_params_sym = Dict(Symbol(k) => v for (k, v) in xgb_params)
     params = merge(default_params, xgb_params_sym)
     model = XGBoost.xgboost(dtrain; params...)
     
+    # For prediction, create DMatrix and predict
     dtest = XGBoost.DMatrix(X_test)
     predictions = XGBoost.predict(model, dtest)
     
+    # Calculate accuracy
     pred_labels = predictions .> 0.5
     actual_labels = y_test .> 0.5
     

@@ -271,8 +271,8 @@ function extract_metamodel_weights(metamodel::FeatureMetamodel)
     # Convert to 1D array for GPU transfer
     weights_1d = vec(encoder_weights)
     
-    # Normalize weights for stability
-    weights_normalized = weights_1d ./ (norm(weights_1d) + 1e-8)
+    # Normalize weights for stability and ensure Float32
+    weights_normalized = Float32.(weights_1d ./ (norm(weights_1d) + 1e-8))
     
     return CuArray(weights_normalized)
 end

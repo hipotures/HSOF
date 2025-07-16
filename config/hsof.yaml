@@ -45,8 +45,7 @@ stage2:
     subsample: 0.8                # Good balance
     colsample_bytree: 0.8         # Good balance
     verbosity: 0
-    device: "cuda"               # Ensure GPU usage
-    tree_method: "hist"           # GPU-compatible method
+    tree_method: "gpu_hist"       # Use GPU-accelerated histogram method
   
   # Parallel processing for metamodel training
   parallel_threads: 8             # Number of CPU threads for parallel XGBoost training
