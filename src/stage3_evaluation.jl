@@ -6,6 +6,8 @@ Reduces 50 features to 10-20 features using precise model evaluation.
 using MLJ, Statistics, Random, StatsBase, XGBoost, DataFrames
 using MLJXGBoostInterface
 using MLJDecisionTreeInterface
+using Combinatorics  # For combinations function
+import MLJ: categorical  # Import categorical function from MLJ
 
 # Suppress XGBoost verbose output
 ENV["XGBOOST_VERBOSITY"] = "0"
@@ -39,7 +41,24 @@ function stage3_precise_evaluation(
     models = setup_evaluation_models(problem_type, xgboost_params, rf_params)
     println("Models configured: $(join(keys(models), ", "))")
     
+    # Adjust target range if we have fewer features than requested
+    if n_features < target_min
+        println("  ⚠️  Only $n_features features available - adjusting target range")
+        target_min = 1
+        target_max = min(n_features, target_max)
+    elseif n_features < target_max
+        target_max = n_features
+    end
+    
     # Generate candidate feature subsets
+    # If we have very few features, reduce the number of candidates
+    if n_features <= 5
+        # With 3 features, we can only have 2^3 - 1 = 7 non-empty subsets
+        max_possible_subsets = 2^n_features - 1
+        n_candidates = min(n_candidates, max_possible_subsets)
+        println("  Reducing candidates to $n_candidates due to limited features")
+    end
+    
     candidate_subsets = generate_candidate_subsets(n_features, target_min, target_max, n_candidates)
     println("Generated $(length(candidate_subsets)) candidate feature subsets")
     
@@ -340,8 +359,17 @@ function evaluate_mlj_model(model, X_train::Matrix{Float32}, y_train::Vector{Flo
     X_train_df = DataFrame(X_train, :auto)
     X_test_df = DataFrame(X_test, :auto)
     
+    # Convert target to categorical for classification
+    if problem_type == "binary_classification" || problem_type == "classification"
+        y_train_cat = categorical(Int.(y_train))
+        y_test_cat = Int.(y_test)
+    else
+        y_train_cat = y_train
+        y_test_cat = y_test
+    end
+    
     # Create and train machine
-    mach = machine(model, X_train_df, y_train)
+    mach = machine(model, X_train_df, y_train_cat)
     
     try
         fit!(mach, verbosity=0)
@@ -354,7 +382,8 @@ function evaluate_mlj_model(model, X_train::Matrix{Float32}, y_train::Vector{Flo
             # For classification, extract mode of predictions
             if eltype(predictions) <: MLJ.CategoricalDistributions.UnivariateFinite
                 pred_labels = mode.(predictions)
-                return mean(pred_labels .== y_test)
+                # Compare with categorical test labels
+                return mean(pred_labels .== categorical(y_test_cat))
             else
                 # Direct predictions
                 pred_labels = predictions .> 0.5
@@ -379,6 +408,24 @@ Generate candidate feature subsets for evaluation.
 function generate_candidate_subsets(n_features::Int, target_min::Int, target_max::Int, 
                                   n_candidates::Int=100)
     candidates = Vector{Int}[]
+    
+    # Handle edge case: very few features
+    if n_features <= 5
+        # Generate all possible subsets within the size range
+        for size in target_min:target_max
+            for combo in combinations(1:n_features, size)
+                push!(candidates, collect(combo))
+                if length(candidates) >= n_candidates
+                    return unique(candidates)
+                end
+            end
+        end
+        # If we still need more, repeat some subsets
+        while length(candidates) < n_candidates
+            push!(candidates, candidates[rand(1:length(candidates))])
+        end
+        return candidates
+    end
     
     # Strategy 1: Random subsets of various sizes (40%)
     n_random = div(n_candidates * 4, 10)

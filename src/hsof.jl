@@ -104,7 +104,9 @@ function run_hsof_gpu_pipeline(yaml_path::String; config_path::String="config/hs
             learning_rate=Float32(hsof_config["stage2"]["learning_rate"]),
             xgb_params=xgb_params,
             parallel_threads=parallel_threads,
-            progress_interval=progress_interval
+            progress_interval=progress_interval,
+            min_features=hsof_config["stage2"]["min_features"],
+            max_features=min(hsof_config["stage2"]["max_features"], stage1_count)
         )
         
         # Validate metamodel

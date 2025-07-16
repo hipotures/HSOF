@@ -39,7 +39,8 @@ function mcts_metamodel_kernel!(
 )
     thread_id = threadIdx().x + (blockIdx().x - 1) * blockDim().x
     
-    if thread_id <= blockDim().x * gridDim().x
+    # Only process if thread_id is within the actual array bounds
+    if thread_id <= length(best_scores)
         # Initialize local variables
         local_best_score = 0.0f0
         local_best_mask = UInt64(0)
@@ -179,8 +180,9 @@ function gpu_stage2_mcts_metamodel(
     println("  Total iterations: $(n_trees * iterations_per_tree)")
     println("  Threads per block: $threads_per_block")
     println("  Number of blocks: $blocks")
+    println("  Total threads launched: $(blocks * threads_per_block)")
     
-    # Allocate GPU memory for results
+    # Allocate GPU memory for results (exactly n_trees elements)
     best_scores = CUDA.zeros(Float32, n_trees)
     best_masks = CUDA.zeros(UInt64, n_trees)
     

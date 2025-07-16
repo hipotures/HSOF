@@ -8,6 +8,7 @@ using Flux, CUDA, Random, Statistics, XGBoost
 # Suppress XGBoost verbose output
 ENV["XGBOOST_VERBOSITY"] = "0"
 
+# IMPORTANT: Define struct FIRST before any usage
 """
 Metamodel architecture for feature subset evaluation.
 Uses Dense layers + Multi-head attention for feature interactions.
@@ -18,6 +19,9 @@ struct FeatureMetamodel
     decoder::Chain                    # 256 → 128 → 64 → 1
     device::Symbol                    # :gpu (no CPU fallback)
 end
+
+# Make FeatureMetamodel compatible with Flux
+Flux.@functor FeatureMetamodel
 
 """
 Create metamodel with multi-head attention for feature interactions.
@@ -126,37 +130,54 @@ function generate_metamodel_training_data(X::Matrix{Float32}, y::Vector{Float32}
     completed = Threads.Atomic{Int}(0)
     last_printed = Threads.Atomic{Int}(0)
     
-    # Process with available threads (1 or many)
-    println("  Processing with $(Threads.nthreads()) thread(s)")
+    # Calculate optimal thread allocation - LESS IS MORE!
+    # Use fewer Julia threads to leave room for XGBoost GPU operations
+    n_julia_threads = max(1, min(4, Threads.nthreads() ÷ 2))  # At least 1 thread, max 4
     
-    Threads.@threads for i in 1:n_samples
-        # Random subset selection
-        subset_size = subset_sizes[i]
-        selected_indices = sample(1:n_features, subset_size, replace=false)
+    println("  Processing with $(n_julia_threads) Julia threads for better GPU utilization")
+    
+    # Process in batches for better thread utilization
+    # Ensure we have at least 1 batch even with 1 thread
+    batch_size = max(1, n_samples ÷ max(1, n_julia_threads * 10))
+    n_batches = cld(n_samples, batch_size)
+    
+    Threads.@threads for batch_idx in 1:n_batches
+        batch_start = (batch_idx - 1) * batch_size + 1
+        batch_end = min(batch_idx * batch_size, n_samples)
         
-        # Create binary mask
-        mask = zeros(Float32, n_features)
-        mask[selected_indices] .= 1.0f0
-        
-        # Extract subset on GPU then transfer to CPU for XGBoost
-        X_subset_gpu = X_gpu[:, selected_indices]
-        X_subset_cpu = Array(X_subset_gpu)  # Transfer only the subset
-        y_cpu = Array(y_gpu)  # Transfer labels once per iteration
-        
-        # Evaluate with XGBoost (will use GPU internally)
-        score = evaluate_with_xgboost(X_subset_cpu, y_cpu; xgb_params=xgb_params)
-        
-        # Store results (thread-safe by index)
-        feature_combinations[i] = mask
-        true_scores[i] = score
-        
-        # Update progress counter
-        Threads.atomic_add!(completed, 1)
-        
-        # Print progress (thread-safe)
-        if completed[] % progress_interval == 0 && completed[] > last_printed[]
-            Threads.atomic_xchg!(last_printed, completed[])
-            println("  Progress: $(completed[])/$n_samples ($(round(100*completed[]/n_samples, digits=1))%)")
+        for i in batch_start:batch_end
+            # Random subset selection
+            subset_size = subset_sizes[i]
+            selected_indices = sample(1:n_features, subset_size, replace=false)
+            
+            # Create binary mask
+            mask = zeros(Float32, n_features)
+            mask[selected_indices] .= 1.0f0
+            
+            # Extract subset on GPU then transfer to CPU for XGBoost
+            X_subset_gpu = X_gpu[:, selected_indices]
+            X_subset_cpu = Array(X_subset_gpu)  # Transfer only the subset
+            y_cpu = Array(y_gpu)  # Transfer labels once per iteration
+            
+            # Set XGBoost parameters for GPU - no threading params!
+            xgb_params_local = copy(xgb_params)
+            xgb_params_local["device"] = "cuda"  # Force GPU
+            
+            # Evaluate with XGBoost
+            score = evaluate_with_xgboost(X_subset_cpu, y_cpu; xgb_params=xgb_params_local)
+            
+            # Store results (thread-safe by index)
+            feature_combinations[i] = mask
+            true_scores[i] = score
+            
+            # Update progress counter
+            Threads.atomic_add!(completed, 1)
+            
+            # Print progress (thread-safe)
+            if completed[] % progress_interval == 0 && completed[] > last_printed[]
+                Threads.atomic_xchg!(last_printed, completed[])
+                println("  Progress: $(completed[])/$n_samples ($(round(100*completed[]/n_samples, digits=1))%)")
+            end
         end
     end
     
@@ -172,73 +193,25 @@ end
 Quick XGBoost evaluation for metamodel training.
 Returns cross-validation accuracy/R² score.
 """
-function evaluate_with_xgboost(X::Union{Matrix{Float32}, CuMatrix{Float32}}, y::Union{Vector{Float32}, CuVector{Float32}}; folds::Int=3, xgb_params::Dict=Dict())
-    # XGBoost.jl can work directly with GPU arrays when tree_method="gpu_hist"
-    n_samples = size(X, 1)
-    
-    # For metamodel training, always use simple split for speed
-    # No need for cross-validation when generating training data
+function evaluate_with_xgboost(X::Union{Matrix{Float32}, CuMatrix{Float32}}, 
+                             y::Union{Vector{Float32}, CuVector{Float32}}; 
+                             folds::Int=3, 
+                             xgb_params::Dict=Dict())
+    # For metamodel training, use simple split for speed
     return simple_xgboost_evaluation(X, y; xgb_params=xgb_params)
-    
-    fold_size = div(n_samples, folds)
-    scores = Float64[]
-    
-    for fold in 1:folds
-        # Create train/test split
-        test_start = (fold - 1) * fold_size + 1
-        test_end = fold == folds ? n_samples : fold * fold_size
-        
-        test_indices = test_start:test_end
-        train_indices = setdiff(1:n_samples, test_indices)
-        
-        X_train, X_test = X[train_indices, :], X[test_indices, :]
-        y_train, y_test = y[train_indices], y[test_indices]
-        
-        # Train XGBoost with GPU support
-        dtrain = XGBoost.DMatrix(X_train, label=y_train)
-        # Merge default params with provided params  
-        # Set nthread based on whether we're running parallel or sequential
-        xgb_threads = Threads.nthreads() > 1 ? 1 : Sys.CPU_THREADS
-        default_params = Dict(
-            :num_round => 50,
-            :max_depth => 6,
-            :eta => 0.1,
-            :objective => "binary:logistic",
-            :device => "cuda",  # Explicitly specify GPU
-            :tree_method => "hist",  # Required for GPU
-            :nthread => xgb_threads,  # 1 thread if parallel Julia, all threads if sequential
-            :watchlist => (;)
-        )
-        # Convert string keys to symbols if needed
-        xgb_params_sym = Dict(Symbol(k) => v for (k, v) in xgb_params)
-        params = merge(default_params, xgb_params_sym)
-        model = XGBoost.xgboost(dtrain; params...)
-        
-        # Predict and evaluate
-        dtest = XGBoost.DMatrix(X_test)
-        predictions = XGBoost.predict(model, dtest)
-        
-        # Calculate accuracy for binary classification
-        pred_labels = predictions .> 0.5
-        actual_labels = y_test .> 0.5
-        accuracy = mean(pred_labels .== actual_labels)
-        
-        push!(scores, accuracy)
-    end
-    
-    return mean(scores)
 end
 
 """
 Simple XGBoost evaluation for small datasets.
 """
-function simple_xgboost_evaluation(X::Union{Matrix{Float32}, CuMatrix{Float32}}, y::Union{Vector{Float32}, CuVector{Float32}}; xgb_params::Dict=Dict())
+function simple_xgboost_evaluation(X::Union{Matrix{Float32}, CuMatrix{Float32}}, 
+                                 y::Union{Vector{Float32}, CuVector{Float32}}; 
+                                 xgb_params::Dict=Dict())
     
     n_samples = size(X, 1)
-    split_idx = div(n_samples, 2)
+    split_idx = div(n_samples * 7, 10)  # 70-30 split
     
     # Convert GPU arrays to CPU for XGBoost.jl compatibility
-    # XGBoost will still use GPU internally via tree_method
     X_cpu = X isa CuMatrix ? Array(X) : X
     y_cpu = y isa CuVector ? Array(y) : y
     
@@ -247,21 +220,26 @@ function simple_xgboost_evaluation(X::Union{Matrix{Float32}, CuMatrix{Float32}},
     
     # Create DMatrix with CPU arrays
     dtrain = XGBoost.DMatrix(X_train, label=y_train)
-    # Merge default params with provided params
-    # Set nthread based on whether we're running parallel or sequential
-    xgb_threads = Threads.nthreads() > 1 ? 1 : Sys.CPU_THREADS
+    
+    # Updated params for XGBoost 2.0+ with proper GPU support
     default_params = Dict(
-        :num_round => 50,
+        :num_round => 30,        # Reduced for speed
         :max_depth => 6,
-        :eta => 0.1,
+        :eta => 0.15,           # Slightly higher learning rate
         :objective => "binary:logistic",
-        :tree_method => "gpu_hist",  # Always use GPU acceleration
-        :nthread => xgb_threads,  # 1 thread if parallel Julia, all threads if sequential
+        :device => "cuda",      # NEW: Use device instead of gpu_id
+        :tree_method => "hist", # NEW: Just "hist" for GPU
+        :subsample => 0.8,      # Subsampling for speed
+        :colsample_bytree => 0.8,
+        :nthread => 1,          # IMPORTANT: Use 1 thread when parallel Julia
         :watchlist => (;)
     )
+    
     # Convert string keys to symbols if needed
     xgb_params_sym = Dict(Symbol(k) => v for (k, v) in xgb_params)
     params = merge(default_params, xgb_params_sym)
+    
+    # Train model
     model = XGBoost.xgboost(dtrain; params...)
     
     # For prediction, create DMatrix and predict
@@ -272,7 +250,7 @@ function simple_xgboost_evaluation(X::Union{Matrix{Float32}, CuMatrix{Float32}},
     pred_labels = predictions .> 0.5
     actual_labels = y_test .> 0.5
     
-    return mean(pred_labels .== actual_labels)
+    return Float32(mean(pred_labels .== actual_labels))
 end
 
 """
@@ -289,15 +267,33 @@ function pretrain_metamodel!(
     batch_size::Int=256,
     xgb_params::Dict=Dict(),
     parallel_threads::Int=4,
-    progress_interval::Int=500
+    progress_interval::Int=500,
+    validation_split::Float32=0.1f0,
+    min_features::Int=5,
+    max_features::Int=50
 )
     println("\n=== Metamodel Pre-training ===")
     
     # Generate training data with GPU-accelerated XGBoost
-    X_train, y_train = generate_metamodel_training_data(X, y, n_samples=n_samples, 
-                                                       xgb_params=xgb_params, 
-                                                       parallel_threads=parallel_threads,
-                                                       progress_interval=progress_interval)
+    X_train, y_train = generate_metamodel_training_data(
+        X, y, 
+        n_samples=n_samples, 
+        xgb_params=xgb_params, 
+        parallel_threads=parallel_threads,
+        progress_interval=progress_interval,
+        min_features=min_features,
+        max_features=max_features
+    )
+    
+    # Split into train/validation
+    n_train = round(Int, size(X_train, 2) * (1 - validation_split))
+    train_indices = 1:n_train
+    val_indices = (n_train+1):size(X_train, 2)
+    
+    X_train_split = X_train[:, train_indices]
+    y_train_split = y_train[train_indices]
+    X_val = X_train[:, val_indices]
+    y_val = y_train[val_indices]
     
     # Training setup
     optimizer = Adam(learning_rate)
@@ -307,23 +303,63 @@ function pretrain_metamodel!(
     println("  Epochs: $epochs")
     println("  Learning rate: $learning_rate")
     println("  Batch size: $batch_size")
+    println("  Training samples: $n_train")
+    println("  Validation samples: $(length(val_indices))")
+    
+    best_val_loss = Inf32
+    patience = 5
+    patience_counter = 0
+    
+    # Calculate number of minibatches
+    n_minibatches = cld(n_train, batch_size)
     
     # Training loop
     for epoch in 1:epochs
-        # Forward pass and loss computation
-        predictions = evaluate_metamodel_batch(model, X_train)
-        loss = loss_fn(predictions, y_train)
+        # Shuffle training data
+        perm = randperm(n_train)
+        epoch_loss = 0f0
         
-        # Backward pass
-        gradients = gradient(() -> loss_fn(evaluate_metamodel_batch(model, X_train), y_train), 
-                           Flux.params(model))
+        # Process mini-batches
+        for batch_idx in 1:n_minibatches
+            batch_start = (batch_idx - 1) * batch_size + 1
+            batch_end = min(batch_idx * batch_size, n_train)
+            batch_indices = perm[batch_start:batch_end]
+            
+            X_batch = X_train_split[:, batch_indices]
+            y_batch = y_train_split[batch_indices]
+            
+            # Forward pass and gradient computation
+            loss, grads = Flux.withgradient(Flux.params(model)) do
+                predictions = evaluate_metamodel_batch(model, X_batch)
+                loss_fn(predictions, y_batch)
+            end
+            
+            # Update parameters
+            Flux.update!(optimizer, Flux.params(model), grads)
+            
+            epoch_loss += loss
+        end
         
-        # Update parameters
-        Flux.update!(optimizer, Flux.params(model), gradients)
+        # Validation
+        val_predictions = evaluate_metamodel_batch(model, X_val)
+        val_loss = loss_fn(val_predictions, y_val)
+        
+        # Early stopping
+        if val_loss < best_val_loss
+            best_val_loss = val_loss
+            patience_counter = 0
+        else
+            patience_counter += 1
+            if patience_counter >= patience
+                println("  Early stopping at epoch $epoch")
+                break
+            end
+        end
         
         # Progress reporting
-        if epoch % 10 == 0
-            println("  Epoch $epoch: Loss = $(round(loss, digits=6))")
+        if epoch % 5 == 0
+            avg_train_loss = epoch_loss / n_minibatches
+            println("  Epoch $epoch: Train Loss = $(round(avg_train_loss, digits=6)), Val Loss = $(round(val_loss, digits=6))")
         end
     end
     
@@ -335,6 +371,7 @@ function pretrain_metamodel!(
     println("✅ Pre-training completed!")
     println("  Final loss: $(round(final_loss, digits=6))")
     println("  Correlation: $(round(correlation, digits=4))")
+    println("  Best validation loss: $(round(best_val_loss, digits=6))")
     
     if correlation < 0.6
         @warn "Low correlation ($(round(correlation, digits=3))) - consider more training data or different architecture"
@@ -419,4 +456,266 @@ function validate_metamodel_accuracy(model::FeatureMetamodel, X::Matrix{Float32}
     end
     
     return correlation, mae
+end
+
+# GPU Memory monitoring utility
+function monitor_gpu_memory()
+    if CUDA.functional()
+        used = CUDA.used_memory() / (1024^3)
+        total = CUDA.total_memory() / (1024^3)
+        available = CUDA.available_memory() / (1024^3)
+        println("  GPU Memory: $(round(used, digits=2))/$(round(total, digits=2)) GB used, $(round(available, digits=2)) GB available")
+    end
+end
+
+"""
+Test if XGBoost is actually using GPU
+"""
+function test_xgboost_gpu()
+    println("\n=== Testing XGBoost GPU Support ===")
+    
+    # Create test data
+    X_test = rand(Float32, 1000, 50)
+    y_test = rand(0:1, 1000) |> Vector{Float32}
+    
+    # Monitor GPU before
+    println("Before XGBoost:")
+    monitor_gpu_memory()
+    
+    # Test CPU version
+    t_cpu = @elapsed begin
+        dtrain = XGBoost.DMatrix(X_test, label=y_test)
+        params_cpu = Dict(
+            :num_round => 10,
+            :device => "cpu",
+            :tree_method => "hist",
+            :objective => "binary:logistic",
+            :watchlist => (;)
+        )
+        model_cpu = XGBoost.xgboost(dtrain; params_cpu...)
+    end
+    
+    # Test GPU version
+    t_gpu = @elapsed begin
+        dtrain = XGBoost.DMatrix(X_test, label=y_test)
+        params_gpu = Dict(
+            :num_round => 10,
+            :device => "cuda",
+            :tree_method => "hist",
+            :objective => "binary:logistic",
+            :watchlist => (;)
+        )
+        model_gpu = XGBoost.xgboost(dtrain; params_gpu...)
+    end
+    
+    println("\nAfter XGBoost GPU:")
+    monitor_gpu_memory()
+    
+    println("\nTiming:")
+    println("  CPU: $(round(t_cpu, digits=3))s")
+    println("  GPU: $(round(t_gpu, digits=3))s") 
+    println("  Speedup: $(round(t_cpu/t_gpu, digits=2))x")
+    
+    if t_gpu >= t_cpu
+        @warn "GPU is not faster than CPU! XGBoost may not be using GPU properly."
+        println("\nTroubleshooting:")
+        println("1. Check if XGBoost was compiled with GPU support")
+        println("2. Try: pkg> add XGBoost#master")
+        println("3. Consider using LightGBM or CatBoost instead")
+    else
+        println("✅ GPU acceleration is working!")
+    end
+end
+
+"""
+Batch evaluate multiple feature subsets at once to minimize overhead.
+This is much more efficient than individual evaluations.
+"""
+function generate_metamodel_training_data_batched(
+    X::Matrix{Float32}, 
+    y::Vector{Float32}; 
+    n_samples::Int=10000,
+    min_features::Int=5,
+    max_features::Int=50,
+    xgb_params::Dict=Dict(),
+    batch_size::Int=100  # Process this many XGBoost models at once
+)
+    println("\n=== Batched Metamodel Training Data Generation ===")
+    println("  Target samples: $n_samples")
+    println("  Batch size: $batch_size")
+    
+    n_features = size(X, 2)
+    max_features = min(max_features, n_features)
+    
+    # Pre-generate all feature selections
+    all_selections = Vector{Vector{Int}}(undef, n_samples)
+    for i in 1:n_samples
+        subset_size = rand(min_features:max_features)
+        all_selections[i] = sample(1:n_features, subset_size, replace=false)
+    end
+    
+    # Group by subset size for efficiency
+    size_groups = Dict{Int, Vector{Int}}()
+    for (idx, selection) in enumerate(all_selections)
+        size = length(selection)
+        if !haskey(size_groups, size)
+            size_groups[size] = Int[]
+        end
+        push!(size_groups[size], idx)
+    end
+    
+    # Results storage
+    feature_combinations = Vector{Vector{Float32}}(undef, n_samples)
+    true_scores = Vector{Float32}(undef, n_samples)
+    
+    completed = 0
+    
+    # Process each size group
+    for (subset_size, indices) in size_groups
+        println("  Processing $(length(indices)) subsets of size $subset_size")
+        
+        # Process in batches
+        for batch_start in 1:batch_size:length(indices)
+            batch_end = min(batch_start + batch_size - 1, length(indices))
+            batch_indices = indices[batch_start:batch_end]
+            
+            # Evaluate batch in parallel
+            batch_scores = evaluate_batch_parallel(
+                X, y, 
+                [all_selections[idx] for idx in batch_indices],
+                xgb_params
+            )
+            
+            # Store results
+            for (local_idx, global_idx) in enumerate(batch_indices)
+                mask = zeros(Float32, n_features)
+                mask[all_selections[global_idx]] .= 1.0f0
+                
+                feature_combinations[global_idx] = mask
+                true_scores[global_idx] = batch_scores[local_idx]
+                
+                completed += 1
+                if completed % 500 == 0
+                    println("  Progress: $completed/$n_samples ($(round(100*completed/n_samples, digits=1))%)")
+                end
+            end
+        end
+    end
+    
+    # Convert to GPU format
+    combinations_matrix = hcat(feature_combinations...) |> gpu
+    scores_vector = true_scores |> gpu
+    
+    println("✅ Batch training data generated")
+    return combinations_matrix, scores_vector
+end
+
+"""
+Evaluate multiple feature subsets in parallel.
+"""
+function evaluate_batch_parallel(
+    X::Matrix{Float32},
+    y::Vector{Float32},
+    feature_subsets::Vector{Vector{Int}},
+    xgb_params::Dict
+)
+    n_subsets = length(feature_subsets)
+    scores = Vector{Float32}(undef, n_subsets)
+    
+    # Use fewer threads to avoid contention
+    n_threads = min(4, Threads.nthreads())
+    
+    # Process subsets in parallel chunks
+    chunk_size = cld(n_subsets, n_threads)
+    
+    Threads.@threads for thread_id in 1:n_threads
+        start_idx = (thread_id - 1) * chunk_size + 1
+        end_idx = min(thread_id * chunk_size, n_subsets)
+        
+        for i in start_idx:end_idx
+            X_subset = X[:, feature_subsets[i]]
+            scores[i] = evaluate_single_xgboost_gpu(X_subset, y, xgb_params)
+        end
+    end
+    
+    return scores
+end
+
+"""
+Single XGBoost evaluation optimized for GPU.
+"""
+function evaluate_single_xgboost_gpu(
+    X::Matrix{Float32},
+    y::Vector{Float32},
+    xgb_params::Dict
+)
+    # Simple train/test split
+    n = size(X, 1)
+    split = div(n * 7, 10)
+    
+    X_train, X_test = X[1:split, :], X[(split+1):end, :]
+    y_train, y_test = y[1:split], y[(split+1):end]
+    
+    # Create DMatrix
+    dtrain = XGBoost.DMatrix(X_train, label=y_train)
+    dtest = XGBoost.DMatrix(X_test)
+    
+    # GPU parameters
+    params = Dict(
+        :num_round => 20,  # Fewer rounds for speed
+        :max_depth => 5,   # Shallower trees
+        :eta => 0.2,
+        :objective => "binary:logistic",
+        :device => "cuda",
+        :tree_method => "hist",
+        :subsample => 0.8,
+        :nthread => 1,  # Important: 1 thread when parallel
+        :watchlist => (;)
+    )
+    
+    # Merge with provided params
+    for (k, v) in xgb_params
+        params[Symbol(k)] = v
+    end
+    
+    # Train
+    model = XGBoost.xgboost(dtrain; params...)
+    
+    # Predict
+    predictions = XGBoost.predict(model, dtest)
+    
+    # Accuracy
+    pred_labels = predictions .> 0.5
+    actual_labels = y_test .> 0.5
+    
+    return Float32(mean(pred_labels .== actual_labels))
+end
+
+"""
+Monitor system resources during training
+"""
+function monitor_system_resources(duration=60)
+    println("\n=== System Resource Monitor ===")
+    
+    @async begin
+        start_time = time()
+        while time() - start_time < duration
+            # GPU stats
+            if CUDA.functional()
+                for i in 0:1  # Both GPUs
+                    try
+                        CUDA.device!(i)
+                        used = CUDA.used_memory() / (1024^3)
+                        total = CUDA.total_memory() / (1024^3)
+                        println("GPU $i: $(round(100*used/total, digits=1))% ($(round(used, digits=1))/$(round(total, digits=1)) GB)")
+                    catch
+                        # GPU not available
+                    end
+                end
+            end
+            
+            println("---")
+            sleep(5)
+        end
+    end
 end
