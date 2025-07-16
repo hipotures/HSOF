@@ -1,0 +1,14 @@
+# Simple configuration for Titanic dataset
+name: titanic
+description: 'Titanic survival prediction'
+database:
+  path: /home/xai/.mdm/datasets/titanic/titanic.sqlite
+tables:
+  train_features: train_features
+target_column: Survived
+id_columns:
+  - PassengerId
+problem_type: binary_classification
+stage1_features: 20
+stage2_features: 8
+final_features: 4

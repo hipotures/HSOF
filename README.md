@@ -1,47 +1,58 @@
-# HSOF - Hybrid Selection of Features
+# HSOF - Hybrid Search for Optimal Features
 
-A high-performance GPU-accelerated feature selection system leveraging dual RTX 4090 GPUs for massive dataset processing.
+A simplified 3-stage feature selection system implemented in Julia.
 
 ## Overview
 
-HSOF implements a three-stage hybrid feature selection pipeline:
+HSOF implements a 3-stage feature selection pipeline:
 
-1. **Stage 1 - Fast Filtering**: GPU-accelerated univariate filtering (5000→500 features in <30s)
-2. **Stage 2 - GPU-MCTS Selection**: Monte Carlo Tree Search with neural network metamodel (500→50 features)
-3. **Stage 3 - Precise Evaluation**: Full model evaluation with XGBoost/RandomForest (50→10-20 features)
-
-## Key Features
-
-- **Dual GPU Processing**: Optimized for 2x RTX 4090 without NVLink
-- **GPU-Native MCTS**: Persistent CUDA kernels with lock-free tree operations
-- **Neural Metamodel**: 1000x speedup over actual model training
-- **Real-time Dashboard**: Rich console UI with GPU monitoring
-- **SQLite Integration**: Seamless database connectivity for large datasets
-
-## System Requirements
-
-- 2x NVIDIA RTX 4090 GPUs (24GB VRAM each)
-- CUDA 11.8+ with compute capability 8.9
-- Julia 1.9+ with CUDA.jl support
-- 64GB+ system RAM recommended
-- Ubuntu 22.04+ or compatible Linux distribution
+1. **Stage 1**: Fast filtering (5000→500 features) - correlation, variance, mutual information
+2. **Stage 2**: MCTS selection (500→50 features) - Monte Carlo Tree Search  
+3. **Stage 3**: Final evaluation (50→15 features) - XGBoost, RandomForest, LightGBM
 
 ## Quick Start
 
+### Installation
+
 ```bash
-# Clone the repository
-git clone https://github.com/hipotures/HSOF.git
+# Clone repository
+git clone <repository-url>
 cd HSOF
 
-# Initialize Julia environment
-julia --project=.
-julia> using Pkg; Pkg.instantiate()
+# Install dependencies
+julia --project=. -e "using Pkg; Pkg.instantiate()"
+```
 
-# Run GPU validation
-julia> include("scripts/validate_environment.jl")
+### Usage
 
-# Run example
-julia> include("examples/basic_feature_selection.jl")
+```bash
+# Run complete pipeline
+julia --project=. src/hsof.jl config/titanic_simple.yaml
+
+# Run tests
+julia --project=. test/test_stage1.jl
+julia --project=. test/test_stage2.jl
+julia --project=. test/test_stage3.jl
+```
+
+## Configuration
+
+Create a YAML configuration file:
+
+```yaml
+name: titanic
+description: 'Titanic survival prediction'
+database:
+  path: /path/to/dataset.sqlite
+tables:
+  train_features: train_features
+target_column: Survived
+id_columns:
+  - PassengerId
+problem_type: binary_classification
+stage1_features: 20
+stage2_features: 8
+final_features: 4
 ```
 
 ## Project Structure
@@ -49,32 +60,64 @@ julia> include("examples/basic_feature_selection.jl")
 ```
 HSOF/
 ├── src/
-│   ├── stages/          # Three-stage pipeline implementation
-│   ├── gpu/            # CUDA kernels and GPU management
-│   ├── metamodel/      # Neural network metamodel
-│   ├── ui/             # Rich console dashboard
-│   └── database/       # SQLite integration layer
-├── test/               # Comprehensive test suite
-├── docs/               # Documentation
-├── benchmarks/         # Performance benchmarks
-└── configs/            # Configuration files
+│   ├── hsof.jl                    # Main entry point
+│   ├── config_loader.jl           # YAML configuration loading
+│   ├── data_loader.jl             # SQLite data loading
+│   ├── stage1_filter.jl           # Fast filtering stage
+│   ├── stage2_mcts.jl             # MCTS selection stage
+│   └── stage3_evaluation.jl       # Final evaluation stage
+├── test/
+│   ├── test_stage1.jl
+│   ├── test_stage2.jl
+│   └── test_stage3.jl
+├── config/
+│   └── titanic_simple.yaml        # Example configuration
+└── Project.toml                   # Dependencies
 ```
 
-## Performance Targets
+## Expected Output
 
-- Stage 1: Process 1M samples × 5000 features → 500 features in <30 seconds
-- Stage 2: MCTS ensemble with 100+ trees achieving >80% GPU utilization
-- Stage 3: Full cross-validation on 50 features in <5 minutes
-- Metamodel: >0.9 correlation with actual model scores at 1000x speedup
+```
+Starting HSOF pipeline...
+Config: config/titanic_simple.yaml
+Loading dataset: titanic
+Data loaded: 891 samples × 142 features
 
-## Development
+=== Stage 1: Fast Filtering ===
+Input: 142 features → Target: 20 features
+Selected 20 features
+Top 5 features: [Pclass, Sex_encoded, Age_filled, Fare_log, Family_size]
 
-This project uses Task Master for project management. Run `task-master list` to see all tasks.
+=== Stage 2: MCTS Selection ===
+Input: 20 features → Target: 8 features
+MCTS iteration: 100/1000, best score: 0.7234
+Selected 8 features
+Best score: 0.7654
 
-## License
+=== Stage 3: Final Evaluation ===
+Input: 8 features → Target: 4 features
+Final selection: 4 features
+Best model: XGBoost
+Best score: 0.8234
+Selected features: [Pclass, Sex_encoded, Fare_log, Family_size]
 
-[License information to be added]
+=== HSOF COMPLETED ===
+Original features: 142
+Final features: 4
+Reduction: 97.2%
+Results saved: titanic_hsof_results.json
+```
 
-## Contributors
+## Dependencies
 
-- Project initialized with Task Master AI
+- Julia 1.9+
+- YAML.jl - Configuration loading
+- SQLite.jl - Database connection
+- DataFrames.jl - Data manipulation
+- MLJ.jl - Machine learning models
+- XGBoost.jl, DecisionTree.jl, LightGBM.jl - Model implementations
+- Statistics.jl, StatsBase.jl - Statistical functions
+
+## Advanced Features
+
+For GPU acceleration and advanced features, see the complete implementation in `_old/` directory.

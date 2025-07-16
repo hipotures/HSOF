@@ -69,7 +69,7 @@ Simulate analysis data
 """
 function simulate_analysis_data(iteration::Int)
     features = [
-        "feature_importance_$(i)" => 0.95 - 0.05 * i + 0.02 * rand()
+        ("feature_importance_$(i)", 0.95 - 0.05 * i + 0.02 * rand())
         for i in 1:10
     ]
     

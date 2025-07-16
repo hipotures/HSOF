@@ -1,0 +1,13 @@
+{
+  "reduction_ratio": 95.2,
+  "original_features": 83,
+  "final_features": [
+    "Sex_female",
+    "Sex_nunique_chars",
+    "Sex_frequency_ratio",
+    "Pclass_zscore"
+  ],
+  "best_model": "SimpleCorrelation",
+  "final_score": 0.4921337944835699,
+  "dataset": "titanic"
+}

@@ -18,34 +18,55 @@ The system is optimized for dual RTX 4090 GPUs (without NVLink) and uses Julia w
 julia --project=.
 julia> using Pkg; Pkg.instantiate()
 
-# Validate GPU environment
-julia> include("scripts/validate_environment.jl")
+# Alternative: Use Makefile for common tasks
+make install                             # Install dependencies
+make dev-setup                          # Full development setup with configs
+
+# Validate GPU environment  
+make validate                            # Comprehensive environment validation
+julia> include("scripts/validate_environment.jl")  # Direct validation
+
+# Build
+make build                               # Build CUDA kernels
+julia build.jl --kernels                # Direct kernel build
 
 # Run tests
-julia> Pkg.test()                        # Run all tests
-julia> Pkg.test(test_args=["unit"])     # Run only unit tests
+make test                                # Run all tests via Pkg.test()
+make test-quick                          # Run quick validation tests only
+make test-gpu                            # Run GPU-specific tests
+julia> Pkg.test()                        # Direct test execution
+julia> Pkg.test(test_args=["unit"])     # Run only unit tests  
 julia> Pkg.test(test_args=["gpu"])      # Run only GPU tests
 
-# Run specific test file
-julia> include("test/ui/test_console_dashboard.jl")
-julia> include("test/ui/test_realtime_update.jl")
+# Run specific test files (examples from current test suite)
+julia> include("test_s5e7_full_gpu_pipeline.jl")        # Full pipeline test
+julia> include("test_comprehensive_final.jl")           # Comprehensive tests
+julia> include("test/ui/test_console_dashboard.jl")     # UI tests
 
-# Run benchmarks
+# Performance and benchmarks
+make benchmark                           # Run performance benchmarks
+make profile                             # Performance profiling
 julia> include("benchmarks/run_benchmarks.jl")
 
-# Check linting (Julia doesn't have standard linting, but you can check formatting)
-julia> using JuliaFormatter
-julia> format("src", verbose=true)
+# Code quality
+make format                              # Format code with JuliaFormatter
+make lint                                # Run linting checks
+julia> using JuliaFormatter; format("src", verbose=true)
+
+# Development utilities
+make repl                                # Start Julia REPL with project
+make gpu0                                # Run with GPU 0 only
+make gpu1                                # Run with GPU 1 only
 
 # Docker development and testing
-docker-compose build hsof                    # Build production container
+make docker-build                        # Build Docker image
+make docker-run                          # Run with GPU support
 docker-compose --profile dev up hsof-dev     # Development with source mounting
 docker-compose --profile test up hsof-test   # Run tests in container
-docker-compose --profile benchmark up hsof-benchmark  # Performance benchmarks
 
 # Production deployment
-kubectl apply -f k8s/base/                   # Deploy to Kubernetes
-kubectl get pods -n hsof                     # Check deployment status
+kubectl apply -f k8s/base/               # Deploy to Kubernetes
+kubectl get pods -n hsof                 # Check deployment status
 ```
 
 ## High-Level Architecture
