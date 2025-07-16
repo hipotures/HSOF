@@ -186,7 +186,96 @@ function generate_metamodel_training_data(X::Matrix{Float32}, y::Vector{Float32}
     scores_vector = true_scores |> gpu
     
     println("✅ Training data generated: $(size(combinations_matrix, 2)) samples")
+    
+    # Debug: Analyze training data quality
+    println("\n📊 Training Data Analysis:")
+    println("  Score distribution:")
+    println("    Range: [$(round(minimum(true_scores), digits=4)), $(round(maximum(true_scores), digits=4))]")
+    println("    Mean: $(round(mean(true_scores), digits=4)), Std: $(round(std(true_scores), digits=4))")
+    
+    # Check for score diversity
+    unique_scores = length(unique(round.(true_scores, digits=3)))
+    println("  Unique scores (rounded to 3 decimals): $unique_scores / $n_samples")
+    
+    if std(true_scores) < 0.01
+        @warn "Training scores have very low variance - this will make learning difficult!"
+    end
+    
+    # Analyze feature usage
+    feature_usage = zeros(Int, n_features)
+    for mask in feature_combinations
+        feature_usage .+= Int.(mask .> 0)
+    end
+    most_used = argmax(feature_usage)
+    least_used = argmin(feature_usage)
+    println("  Feature usage:")
+    println("    Most used feature: #$most_used ($(feature_usage[most_used]) times)")
+    println("    Least used feature: #$least_used ($(feature_usage[least_used]) times)")
+    println("    Mean usage per feature: $(round(mean(feature_usage), digits=1))")
+    
     return combinations_matrix, scores_vector
+end
+
+"""
+Validate data quality before metamodel training.
+"""
+function validate_data_quality(X::Matrix{Float32}, y::Vector{Float32})
+    println("\n🔍 Validating Data Quality...")
+    
+    n_samples, n_features = size(X)
+    
+    # Check for NaN/Inf values
+    if any(isnan.(X)) || any(isinf.(X))
+        @error "Found NaN or Inf values in feature matrix!"
+        return false
+    end
+    
+    if any(isnan.(y)) || any(isinf.(y))
+        @error "Found NaN or Inf values in target vector!"
+        return false
+    end
+    
+    # Check for constant features
+    constant_features = Int[]
+    for j in 1:n_features
+        if std(X[:, j]) < 1e-10
+            push!(constant_features, j)
+        end
+    end
+    
+    if !isempty(constant_features)
+        @warn "Found $(length(constant_features)) constant features: $constant_features"
+    end
+    
+    # Check target distribution
+    target_stats = Dict(
+        "min" => minimum(y),
+        "max" => maximum(y),
+        "mean" => mean(y),
+        "std" => std(y),
+        "unique_values" => length(unique(y))
+    )
+    
+    println("  Target statistics:")
+    for (k, v) in target_stats
+        println("    $k: $(round(v, digits=4))")
+    end
+    
+    if target_stats["std"] < 0.01
+        @warn "Target has very low variance - this may cause training issues!"
+    end
+    
+    # Check for data imbalance in binary classification
+    if all(y .∈ [0.0, 1.0])
+        pos_ratio = mean(y)
+        println("  Class balance: $(round(100*pos_ratio, digits=1))% positive")
+        if pos_ratio < 0.1 || pos_ratio > 0.9
+            @warn "Severe class imbalance detected!"
+        end
+    end
+    
+    println("✅ Data quality check completed")
+    return true
 end
 
 """
@@ -274,6 +363,12 @@ function pretrain_metamodel!(
 )
     println("\n=== Metamodel Pre-training ===")
     
+    # Validate input data quality
+    if !validate_data_quality(X, y)
+        @error "Data quality issues detected - aborting metamodel training"
+        return model
+    end
+    
     # Generate training data with GPU-accelerated XGBoost
     X_train, y_train = generate_metamodel_training_data(
         X, y, 
@@ -337,6 +432,25 @@ function pretrain_metamodel!(
             # Update parameters
             Flux.update!(optimizer, Flux.params(model), grads)
             
+            # Monitor gradients (every 10 epochs)
+            if epoch % 10 == 0 && batch_idx == 1
+                grad_norms = []
+                for p in Flux.params(model)
+                    if haskey(grads, p) && grads[p] !== nothing
+                        push!(grad_norms, norm(grads[p]))
+                    end
+                end
+                if !isempty(grad_norms)
+                    max_grad = maximum(grad_norms)
+                    mean_grad = mean(grad_norms)
+                    if max_grad > 10.0
+                        @warn "Large gradients detected! Max: $(round(max_grad, digits=2)), Mean: $(round(mean_grad, digits=2))"
+                    elseif max_grad < 1e-6
+                        @warn "Vanishing gradients! Max: $(round(max_grad, sigdigits=2)), Mean: $(round(mean_grad, sigdigits=2))"
+                    end
+                end
+            end
+            
             epoch_loss += loss
         end
         
@@ -363,18 +477,48 @@ function pretrain_metamodel!(
         end
     end
     
-    # Final validation
+    # Final validation with detailed diagnostics
     final_predictions = evaluate_metamodel_batch(model, X_train)
     final_loss = loss_fn(final_predictions, y_train)
-    correlation = cor(Array(final_predictions), Array(y_train))
+    
+    # Convert to CPU for analysis
+    pred_cpu = Array(final_predictions)
+    true_cpu = Array(y_train)
+    
+    correlation = cor(pred_cpu, true_cpu)
     
     println("✅ Pre-training completed!")
     println("  Final loss: $(round(final_loss, digits=6))")
     println("  Correlation: $(round(correlation, digits=4))")
     println("  Best validation loss: $(round(best_val_loss, digits=6))")
     
+    # Debug: Score distributions
+    println("\n📊 Score Distribution Analysis:")
+    println("  Training data (true scores):")
+    println("    Range: [$(round(minimum(true_cpu), digits=4)), $(round(maximum(true_cpu), digits=4))]")
+    println("    Mean: $(round(mean(true_cpu), digits=4)), Std: $(round(std(true_cpu), digits=4))")
+    println("  Metamodel predictions:")
+    println("    Range: [$(round(minimum(pred_cpu), digits=4)), $(round(maximum(pred_cpu), digits=4))]")
+    println("    Mean: $(round(mean(pred_cpu), digits=4)), Std: $(round(std(pred_cpu), digits=4))")
+    
+    # Check for prediction collapse
+    if std(pred_cpu) < 0.01
+        @warn "Predictions have very low variance - model may be collapsed!"
+    end
+    
     if correlation < 0.6
         @warn "Low correlation ($(round(correlation, digits=3))) - consider more training data or different architecture"
+        
+        # Additional diagnostics for low correlation
+        println("\n🔍 Debugging low correlation:")
+        
+        # Sample some predictions for inspection
+        n_samples = min(10, length(pred_cpu))
+        indices = sample(1:length(pred_cpu), n_samples, replace=false)
+        println("  Sample predictions vs true values:")
+        for idx in indices
+            println("    True: $(round(true_cpu[idx], digits=4)), Pred: $(round(pred_cpu[idx], digits=4)), Diff: $(round(abs(true_cpu[idx] - pred_cpu[idx]), digits=4))")
+        end
     end
     
     return model
@@ -412,19 +556,29 @@ end
 Validate metamodel accuracy against real XGBoost evaluations.
 """
 function validate_metamodel_accuracy(model::FeatureMetamodel, X::Matrix{Float32}, y::Vector{Float32}; 
-                                   n_test::Int=100)
+                                   n_test::Int=100, min_features::Int=10, max_features::Int=25)
     println("\n=== Metamodel Validation ===")
     
     n_features = size(X, 2)
+    
+    # Adjust feature range to match available features
+    adjusted_min = min(min_features, n_features)
+    adjusted_max = min(max_features, n_features)
+    
+    println("  Validation feature range: $adjusted_min-$adjusted_max (n_features=$n_features)")
+    
     metamodel_scores = Float32[]
     real_scores = Float32[]
+    subset_sizes = Int[]
     
     for i in 1:n_test
-        # Random feature combination
-        subset_size = rand(10:min(30, n_features))
+        # Use same feature range as training!
+        subset_size = rand(adjusted_min:adjusted_max)
         mask = zeros(Float32, n_features)
         selected_indices = sample(1:n_features, subset_size, replace=false)
         mask[selected_indices] .= 1.0f0
+        
+        push!(subset_sizes, subset_size)
         
         # Metamodel prediction
         mask_gpu = reshape(mask, :, 1) |> gpu
@@ -451,8 +605,29 @@ function validate_metamodel_accuracy(model::FeatureMetamodel, X::Matrix{Float32}
     println("  Correlation: $(round(correlation, digits=4))")
     println("  Mean Absolute Error: $(round(mae, digits=4))")
     
+    # Debug: Score distributions in validation
+    println("\n📊 Validation Score Distributions:")
+    println("  Real XGBoost scores:")
+    println("    Range: [$(round(minimum(real_scores), digits=4)), $(round(maximum(real_scores), digits=4))]")
+    println("    Mean: $(round(mean(real_scores), digits=4)), Std: $(round(std(real_scores), digits=4))")
+    println("  Metamodel predictions:")
+    println("    Range: [$(round(minimum(metamodel_scores), digits=4)), $(round(maximum(metamodel_scores), digits=4))]")
+    println("    Mean: $(round(mean(metamodel_scores), digits=4)), Std: $(round(std(metamodel_scores), digits=4))")
+    println("  Feature subset sizes used:")
+    println("    Range: [$(minimum(subset_sizes)), $(maximum(subset_sizes))]")
+    println("    Mean: $(round(mean(subset_sizes), digits=1))")
+    
     if correlation < 0.7
         @warn "Low correlation - metamodel may need more training"
+        
+        # Find worst predictions
+        errors = abs.(metamodel_scores .- real_scores)
+        worst_indices = sortperm(errors, rev=true)[1:min(5, length(errors))]
+        
+        println("\n🔍 Worst predictions:")
+        for idx in worst_indices
+            println("    Features: $(subset_sizes[idx]), Real: $(round(real_scores[idx], digits=4)), Pred: $(round(metamodel_scores[idx], digits=4)), Error: $(round(errors[idx], digits=4))")
+        end
     end
     
     return correlation, mae
@@ -689,6 +864,54 @@ function evaluate_single_xgboost_gpu(
     actual_labels = y_test .> 0.5
     
     return Float32(mean(pred_labels .== actual_labels))
+end
+
+"""
+Analyze metamodel attention patterns for debugging.
+"""
+function analyze_metamodel_attention(model::FeatureMetamodel, X::Matrix{Float32}, n_samples::Int=5)
+    println("\n🔍 Analyzing Metamodel Attention Patterns...")
+    
+    n_features = size(X, 2)
+    
+    for i in 1:n_samples
+        # Create a random feature mask
+        subset_size = rand(10:min(25, n_features))
+        mask = zeros(Float32, n_features)
+        selected_indices = sample(1:n_features, subset_size, replace=false)
+        mask[selected_indices] .= 1.0f0
+        
+        # Get intermediate outputs
+        mask_gpu = reshape(mask, :, 1) |> gpu
+        
+        # Forward pass with attention inspection
+        encoded = model.encoder(mask_gpu)
+        encoded_3d = reshape(encoded, size(encoded, 1), size(encoded, 2), 1)
+        
+        # Get attention output (might return tuple with attention weights)
+        attended_output = model.attention(encoded_3d, encoded_3d)
+        
+        if attended_output isa Tuple && length(attended_output) > 1
+            attended_3d, attention_weights = attended_output
+            
+            # Analyze attention weights
+            weights_cpu = Array(attention_weights)
+            println("\n  Sample $i ($(subset_size) features selected):")
+            println("    Attention weight stats:")
+            println("      Max: $(round(maximum(weights_cpu), digits=4))")
+            println("      Min: $(round(minimum(weights_cpu), digits=4))")
+            println("      Mean: $(round(mean(weights_cpu), digits=4))")
+            println("      Std: $(round(std(weights_cpu), digits=4))")
+        else
+            println("  Sample $i: No attention weights available")
+        end
+        
+        # Get final prediction
+        attended = reshape(attended_output isa Tuple ? attended_output[1] : attended_output,
+                         size(encoded, 1), size(encoded, 2))
+        score = vec(model.decoder(attended))[1]
+        println("    Predicted score: $(round(Array(score), digits=4))")
+    end
 end
 
 """

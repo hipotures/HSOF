@@ -111,10 +111,19 @@ function run_hsof_gpu_pipeline(yaml_path::String; config_path::String="config/hs
         
         # Validate metamodel
         println("Validating metamodel...")
-        correlation, mae = validate_metamodel_accuracy(metamodel, X1, y, n_test=50)
+        correlation, mae = validate_metamodel_accuracy(
+            metamodel, X1, y, 
+            n_test=50,
+            min_features=hsof_config["stage2"]["min_features"],
+            max_features=min(hsof_config["stage2"]["max_features"], stage1_count)
+        )
         
         if correlation < 0.6
             @warn "Metamodel correlation low ($correlation), results may be suboptimal"
+            
+            # Analyze attention patterns for debugging
+            println("\nAnalyzing metamodel attention patterns for debugging...")
+            analyze_metamodel_attention(metamodel, X1, 3)
         end
         
         # Run MCTS with metamodel
