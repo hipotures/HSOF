@@ -266,7 +266,7 @@ function validate_data_quality(X::Matrix{Float32}, y::Vector{Float32})
     end
     
     # Check for data imbalance in binary classification
-    if all(y .∈ [0.0, 1.0])
+    if all(x -> x ∈ [0.0, 1.0], y)
         pos_ratio = mean(y)
         println("  Class balance: $(round(100*pos_ratio, digits=1))% positive")
         if pos_ratio < 0.1 || pos_ratio > 0.9
@@ -909,8 +909,9 @@ function analyze_metamodel_attention(model::FeatureMetamodel, X::Matrix{Float32}
         # Get final prediction
         attended = reshape(attended_output isa Tuple ? attended_output[1] : attended_output,
                          size(encoded, 1), size(encoded, 2))
-        score = vec(model.decoder(attended))[1]
-        println("    Predicted score: $(round(Array(score), digits=4))")
+        scores = vec(model.decoder(attended))
+        score_cpu = Array(scores)[1]
+        println("    Predicted score: $(round(score_cpu, digits=4))")
     end
 end
 
