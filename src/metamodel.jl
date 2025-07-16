@@ -45,18 +45,21 @@ function create_metamodel(
     end
     push!(decoder_layers, Dense(hidden_sizes[end] => 1, sigmoid))
     
+    # Create model components and move to GPU
+    encoder = Dense(n_features => hidden_sizes[1], relu) |> gpu
+    attention = MultiHeadAttention(hidden_sizes[1]; nheads=n_attention_heads, dropout_prob=dropout_rate) |> gpu
+    decoder = Chain(decoder_layers...) |> gpu
+    
     model = FeatureMetamodel(
-        Dense(n_features => hidden_sizes[1], relu),
-        MultiHeadAttention(hidden_sizes[1]; nheads=n_attention_heads, dropout_prob=dropout_rate),
-        Chain(decoder_layers...),
+        encoder,
+        attention,
+        decoder,
         device
     )
     
-    # Move to GPU (no CPU fallback)
-    gpu_model = model |> gpu
     println("✅ Metamodel created and moved to GPU")
     
-    return gpu_model
+    return model
 end
 
 """
@@ -71,8 +74,19 @@ function evaluate_metamodel_batch(model::FeatureMetamodel, feature_masks::CuMatr
     # Forward pass through metamodel
     encoded = model.encoder(feature_masks)              # (256, n_combinations)
     
+    # Reshape for MultiHeadAttention (needs 3D tensor: features × batch × 1)
+    encoded_3d = reshape(encoded, size(encoded, 1), size(encoded, 2), 1)
+    
     # Self-attention for feature interactions
-    attended = model.attention(encoded, encoded)        # (256, n_combinations)
+    attended_3d = model.attention(encoded_3d, encoded_3d)   # Returns output tensor
+    
+    # Handle if attention returns a tuple (output, attention_scores)
+    if attended_3d isa Tuple
+        attended_3d = attended_3d[1]  # Get just the output tensor
+    end
+    
+    # Reshape back to 2D
+    attended = reshape(attended_3d, size(attended_3d, 1), size(attended_3d, 2))
     
     # Final prediction
     scores = model.decoder(attended)                    # (1, n_combinations)
@@ -85,41 +99,63 @@ Generate training data for metamodel using real XGBoost evaluations.
 This is expensive but only done once during pre-training.
 """
 function generate_metamodel_training_data(X::Matrix{Float32}, y::Vector{Float32}; 
-                                        n_samples::Int=10000, min_features::Int=5, max_features::Int=50)
+                                        n_samples::Int=10000, min_features::Int=5, max_features::Int=50,
+                                        xgb_params::Dict=Dict(), parallel_threads::Int=4, 
+                                        progress_interval::Int=500)
     println("Generating metamodel training data...")
     println("  Target samples: $n_samples")
     println("  Feature subset size: $min_features - $max_features")
+    println("  Parallel threads: $parallel_threads (available: $(Threads.nthreads()))")
     
     n_features = size(X, 2)
     max_features = min(max_features, n_features)
     
-    feature_combinations = []
-    true_scores = Float32[]
+    # Pre-allocate arrays for thread-safe parallel processing
+    feature_combinations = Vector{Vector{Float32}}(undef, n_samples)
+    true_scores = Vector{Float32}(undef, n_samples)
     
-    for i in 1:n_samples
-        # Random subset size
-        subset_size = rand(min_features:max_features)
+    # Pre-generate random seeds for reproducibility in parallel
+    subset_sizes = [rand(min_features:max_features) for _ in 1:n_samples]
+    
+    # Progress tracking with thread-safe counter
+    completed = Threads.Atomic{Int}(0)
+    last_printed = Threads.Atomic{Int}(0)
+    
+    # Process with available threads (1 or many)
+    println("  Processing with $(Threads.nthreads()) thread(s)")
+    
+    Threads.@threads for i in 1:n_samples
+        # Random subset selection
+        subset_size = subset_sizes[i]
+        selected_indices = sample(1:n_features, subset_size, replace=false)
         
         # Create binary mask
         mask = zeros(Float32, n_features)
-        selected_indices = sample(1:n_features, subset_size, replace=false)
         mask[selected_indices] .= 1.0f0
         
-        # Evaluate with real XGBoost (expensive!)
+        # Extract subset
         X_subset = X[:, selected_indices]
-        score = evaluate_with_xgboost(X_subset, y)
         
-        push!(feature_combinations, mask)
-        push!(true_scores, score)
+        # Evaluate with XGBoost
+        score = evaluate_with_xgboost(X_subset, y; xgb_params=xgb_params)
         
-        if i % 1000 == 0
-            println("  Progress: $i/$n_samples ($(round(100*i/n_samples, digits=1))%)")
+        # Store results (thread-safe by index)
+        feature_combinations[i] = mask
+        true_scores[i] = score
+        
+        # Update progress counter
+        Threads.atomic_add!(completed, 1)
+        
+        # Print progress (thread-safe)
+        if completed[] % progress_interval == 0 && completed[] > last_printed[]
+            Threads.atomic_xchg!(last_printed, completed[])
+            println("  Progress: $(completed[])/$n_samples ($(round(100*completed[]/n_samples, digits=1))%)")
         end
     end
     
-    # Convert to GPU arrays
-    combinations_matrix = hcat(feature_combinations...) |> gpu  # (n_features, n_samples)
-    scores_vector = true_scores |> gpu                          # (n_samples,)
+    # Convert to matrix format and move to GPU
+    combinations_matrix = hcat(feature_combinations...) |> gpu
+    scores_vector = true_scores |> gpu
     
     println("✅ Training data generated: $(size(combinations_matrix, 2)) samples")
     return combinations_matrix, scores_vector
@@ -129,13 +165,13 @@ end
 Quick XGBoost evaluation for metamodel training.
 Returns cross-validation accuracy/R² score.
 """
-function evaluate_with_xgboost(X::Matrix{Float32}, y::Vector{Float32}; folds::Int=3)
-    
+function evaluate_with_xgboost(X::Matrix{Float32}, y::Vector{Float32}; folds::Int=3, xgb_params::Dict=Dict())
+    # Keep data on CPU - XGBoost will handle GPU internally via device parameter
     n_samples = size(X, 1)
-    if n_samples < folds
-        # Too few samples for CV, use simple train/test split
-        return simple_xgboost_evaluation(X, y)
-    end
+    
+    # For metamodel training, always use simple split for speed
+    # No need for cross-validation when generating training data
+    return simple_xgboost_evaluation(X, y; xgb_params=xgb_params)
     
     fold_size = div(n_samples, folds)
     scores = Float64[]
@@ -151,10 +187,25 @@ function evaluate_with_xgboost(X::Matrix{Float32}, y::Vector{Float32}; folds::In
         X_train, X_test = X[train_indices, :], X[test_indices, :]
         y_train, y_test = y[train_indices], y[test_indices]
         
-        # Train XGBoost
+        # Train XGBoost with GPU support
         dtrain = XGBoost.DMatrix(X_train, label=y_train)
-        model = XGBoost.xgboost(dtrain, num_round=50, max_depth=6, eta=0.1, 
-                               objective="binary:logistic", verbosity=0, silent=1)
+        # Merge default params with provided params  
+        # Set nthread based on whether we're running parallel or sequential
+        xgb_threads = Threads.nthreads() > 1 ? 1 : Sys.CPU_THREADS
+        default_params = Dict(
+            :num_round => 50,
+            :max_depth => 6,
+            :eta => 0.1,
+            :objective => "binary:logistic",
+            :device => "cuda",  # Explicitly specify GPU
+            :tree_method => "hist",  # Required for GPU
+            :nthread => xgb_threads,  # 1 thread if parallel Julia, all threads if sequential
+            :watchlist => (;)
+        )
+        # Convert string keys to symbols if needed
+        xgb_params_sym = Dict(Symbol(k) => v for (k, v) in xgb_params)
+        params = merge(default_params, xgb_params_sym)
+        model = XGBoost.xgboost(dtrain; params...)
         
         # Predict and evaluate
         dtest = XGBoost.DMatrix(X_test)
@@ -174,7 +225,7 @@ end
 """
 Simple XGBoost evaluation for small datasets.
 """
-function simple_xgboost_evaluation(X::Matrix{Float32}, y::Vector{Float32})
+function simple_xgboost_evaluation(X::Matrix{Float32}, y::Vector{Float32}; xgb_params::Dict=Dict())
     
     n_samples = size(X, 1)
     split_idx = div(n_samples, 2)
@@ -183,8 +234,27 @@ function simple_xgboost_evaluation(X::Matrix{Float32}, y::Vector{Float32})
     y_train, y_test = y[1:split_idx], y[(split_idx+1):end]
     
     dtrain = XGBoost.DMatrix(X_train, label=y_train)
-    model = XGBoost.xgboost(dtrain, num_round=50, max_depth=6, eta=0.1,
-                           objective="binary:logistic", verbosity=0, silent=1)
+    # Merge default params with provided params
+    # Set nthread based on whether we're running parallel or sequential
+    xgb_threads = Threads.nthreads() > 1 ? 1 : Sys.CPU_THREADS
+    default_params = Dict(
+        :num_round => 50,
+        :max_depth => 6,
+        :eta => 0.1,
+        :objective => "binary:logistic",
+        :device => "cuda",  # Explicitly specify GPU
+        :tree_method => "hist",  # Required for GPU
+        :nthread => xgb_threads,  # 1 thread if parallel Julia, all threads if sequential
+        :watchlist => (;)
+    )
+    # Debug: print actual thread count being used
+    if get(xgb_params, "debug", false)
+        println("    XGBoost config: nthread=$xgb_threads, device=cuda")
+    end
+    # Convert string keys to symbols if needed
+    xgb_params_sym = Dict(Symbol(k) => v for (k, v) in xgb_params)
+    params = merge(default_params, xgb_params_sym)
+    model = XGBoost.xgboost(dtrain; params...)
     
     dtest = XGBoost.DMatrix(X_test)
     predictions = XGBoost.predict(model, dtest)
@@ -206,12 +276,18 @@ function pretrain_metamodel!(
     n_samples::Int=10000, 
     epochs::Int=50, 
     learning_rate::Float32=0.001f0,
-    batch_size::Int=256
+    batch_size::Int=256,
+    xgb_params::Dict=Dict(),
+    parallel_threads::Int=4,
+    progress_interval::Int=500
 )
     println("\n=== Metamodel Pre-training ===")
     
-    # Generate training data (expensive!)
-    X_train, y_train = generate_metamodel_training_data(X, y, n_samples=n_samples)
+    # Generate training data with GPU-accelerated XGBoost
+    X_train, y_train = generate_metamodel_training_data(X, y, n_samples=n_samples, 
+                                                       xgb_params=xgb_params, 
+                                                       parallel_threads=parallel_threads,
+                                                       progress_interval=progress_interval)
     
     # Training setup
     optimizer = Adam(learning_rate)
@@ -305,7 +381,8 @@ function validate_metamodel_accuracy(model::FeatureMetamodel, X::Matrix{Float32}
         
         # Metamodel prediction
         mask_gpu = reshape(mask, :, 1) |> gpu
-        meta_score = evaluate_metamodel_batch(model, mask_gpu)[1]
+        meta_scores_gpu = evaluate_metamodel_batch(model, mask_gpu)
+        meta_score = Array(meta_scores_gpu)[1]  # Transfer to CPU before indexing
         
         # Real XGBoost evaluation
         X_subset = X[:, selected_indices]

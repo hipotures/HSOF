@@ -13,7 +13,7 @@ stage1:
 # Stage 2: MCTS with Metamodel
 stage2:
   # MCTS parameters
-  total_iterations: 500000         # Total MCTS iterations
+  total_iterations: 50000         # Total MCTS iterations
   n_trees: 200                    # Number of parallel MCTS trees
   exploration_constant: 1.414     # UCB1 exploration parameter
   min_features: 3                 # Minimum features in subset
@@ -22,7 +22,7 @@ stage2:
   
   # Metamodel parameters
   pretraining_samples: 5000       # Number of samples for metamodel training
-  pretraining_epochs: 30          # Training epochs
+  pretraining_epochs: 300          # Training epochs
   learning_rate: 0.001            # Adam optimizer learning rate
   batch_size: 256                 # Training batch size
   
@@ -35,6 +35,22 @@ stage2:
   online_update_enabled: true     # Update metamodel during MCTS
   online_update_frequency: 1000   # Update every N iterations
   online_learning_rate: 0.0001    # Lower LR for online updates
+  
+  # XGBoost parameters for metamodel training data generation
+  # These are used for quick evaluation during metamodel training
+  metamodel_xgboost:
+    num_round: 50                 # Balanced for metamodel training
+    max_depth: 6                  # Standard depth
+    eta: 0.1                      # Standard learning rate
+    subsample: 0.8                # Good balance
+    colsample_bytree: 0.8         # Good balance
+    verbosity: 0
+    device: "cuda"               # Ensure GPU usage
+    tree_method: "hist"           # GPU-compatible method
+  
+  # Parallel processing for metamodel training
+  parallel_threads: 8             # Number of CPU threads for parallel XGBoost training
+  progress_interval: 500          # Print progress every N samples
 
 # Stage 3: Real Model Evaluation  
 stage3:

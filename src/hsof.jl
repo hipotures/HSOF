@@ -92,12 +92,19 @@ function run_hsof_gpu_pipeline(yaml_path::String; config_path::String="config/hs
         )
         
         println("Pre-training metamodel...")
+        # Get XGBoost params for metamodel training from config
+        xgb_params = get(hsof_config["stage2"], "metamodel_xgboost", Dict())
+        parallel_threads = get(hsof_config["stage2"], "parallel_threads", 4)
+        progress_interval = get(hsof_config["stage2"], "progress_interval", 500)
         pretrain_metamodel!(
             metamodel, X1, y, 
             n_samples=hsof_config["stage2"]["pretraining_samples"],
             epochs=hsof_config["stage2"]["pretraining_epochs"],
             batch_size=hsof_config["stage2"]["batch_size"],
-            learning_rate=Float32(hsof_config["stage2"]["learning_rate"])
+            learning_rate=Float32(hsof_config["stage2"]["learning_rate"]),
+            xgb_params=xgb_params,
+            parallel_threads=parallel_threads,
+            progress_interval=progress_interval
         )
         
         # Validate metamodel

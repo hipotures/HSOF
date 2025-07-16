@@ -9,7 +9,6 @@ using MLJDecisionTreeInterface
 
 # Suppress XGBoost verbose output
 ENV["XGBOOST_VERBOSITY"] = "0"
-XGBoost.setparam!("verbosity", 0)
 
 """
 Stage 3: Precise model evaluation with multiple algorithms.
@@ -160,15 +159,15 @@ function setup_evaluation_models(problem_type::String, xgboost_params::Dict=Dict
     if problem_type == "binary_classification" || problem_type == "classification"
         println("Setting up classification models...")
         
-        # XGBoost Classifier
+        # XGBoost Classifier with GPU support (XGBoost v2+)
         default_xgb_params = Dict(
             :num_round => 100,
             :max_depth => 6,
             :eta => 0.1,
             :objective => "binary:logistic",
             :eval_metric => "logloss",
-            :verbosity => 0,
-            :silent => 1
+            :device => "cuda",  # New way to specify GPU in XGBoost 2.0+
+            :tree_method => "hist"  # Use "hist" instead of deprecated "gpu_hist"
         )
         # Merge with user-provided params
         merged_xgb_params = merge(default_xgb_params, xgboost_params)
@@ -206,15 +205,15 @@ function setup_evaluation_models(problem_type::String, xgboost_params::Dict=Dict
     else
         println("Setting up regression models...")
         
-        # XGBoost Regressor
+        # XGBoost Regressor with GPU support (XGBoost v2+)
         default_xgb_params = Dict(
             :num_round => 100,
             :max_depth => 6,
             :eta => 0.1,
             :objective => "reg:squarederror",
             :eval_metric => "rmse",
-            :verbosity => 0,
-            :silent => 1
+            :device => "cuda",  # New way to specify GPU in XGBoost 2.0+
+            :tree_method => "hist"  # Use "hist" instead of deprecated "gpu_hist"
         )
         merged_xgb_params = merge(default_xgb_params, xgboost_params)
         models["XGBoost"] = Dict(
@@ -307,7 +306,11 @@ function evaluate_xgboost(params::Dict, X_train::Matrix{Float32}, y_train::Vecto
     
     # Train model
     dtrain = XGBoost.DMatrix(X_train, label=y_train)
-    model = XGBoost.xgboost(dtrain; params...)
+    # Add watchlist=(;) to params to suppress output
+    # Ensure all params have symbol keys
+    params_sym = Dict(Symbol(k) => v for (k, v) in params)
+    params_with_watchlist = merge(params_sym, Dict(:watchlist => (;)))
+    model = XGBoost.xgboost(dtrain; params_with_watchlist...)
     
     # Predict
     dtest = XGBoost.DMatrix(X_test)
