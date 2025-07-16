@@ -1,0 +1,91 @@
+# HSOF Pipeline Configuration
+# GPU-accelerated feature selection with metamodel
+
+# Execution mode presets
+mode: "balanced"  # Options: "fast", "balanced", "accurate"
+
+# Stage 1: GPU Correlation Filtering
+stage1:
+  correlation_threshold: 0.1      # Minimum correlation to keep feature
+  min_features_to_keep: 3        # Minimum features to retain
+  variance_threshold: 0.05        # Minimum variance for features (1% of unit variance)
+  
+# Stage 2: MCTS with Metamodel
+stage2:
+  # MCTS parameters
+  total_iterations: 500000         # Total MCTS iterations
+  n_trees: 200                    # Number of parallel MCTS trees
+  exploration_constant: 1.414     # UCB1 exploration parameter
+  min_features: 3                 # Minimum features in subset
+  max_features: 50                # Maximum features in subset (or null for unlimited)
+  convergence_patience: 5000      # Stop if no improvement
+  
+  # Metamodel parameters
+  pretraining_samples: 5000       # Number of samples for metamodel training
+  pretraining_epochs: 30          # Training epochs
+  learning_rate: 0.001            # Adam optimizer learning rate
+  batch_size: 256                 # Training batch size
+  
+  # Metamodel architecture
+  hidden_sizes: [256, 128, 64]    # Dense layer sizes
+  n_attention_heads: 8            # Multi-head attention heads
+  dropout_rate: 0.2               # Dropout for regularization
+  
+  # Online learning
+  online_update_enabled: true     # Update metamodel during MCTS
+  online_update_frequency: 1000   # Update every N iterations
+  online_learning_rate: 0.0001    # Lower LR for online updates
+
+# Stage 3: Real Model Evaluation  
+stage3:
+  n_candidate_subsets: 100        # Number of feature subsets to evaluate
+  cv_folds: 5                     # Cross-validation folds
+  min_features_final: 5           # Minimum features in final selection
+  max_features_final: 20          # Maximum features in final selection
+  
+  # Model parameters
+  xgboost:
+    num_round: 100
+    max_depth: 6
+    eta: 0.1
+    verbosity: 0
+  
+  random_forest:
+    n_trees: 100
+    max_depth: 10
+
+# GPU Memory Management
+gpu:
+  max_memory_gb: null             # null = use all available
+  memory_pool_size: 0.8           # Fraction of GPU memory to use
+  batch_processing: true          # Process in batches if needed
+  
+# Performance Tuning
+performance:
+  enable_mixed_precision: false   # Use FP16 for speed (experimental)
+  kernel_threads_per_block: 256   # CUDA kernel configuration
+  enable_profiling: false         # GPU profiling for optimization
+
+# Mode Presets (override individual settings)
+presets:
+  fast:
+    stage2:
+      total_iterations: 10000
+      pretraining_samples: 1000
+      pretraining_epochs: 10
+    stage3:
+      n_candidate_subsets: 20
+      cv_folds: 3
+      
+  balanced:
+    # Uses default values above
+    
+  accurate:
+    stage2:
+      total_iterations: 200000
+      n_trees: 200
+      pretraining_samples: 20000
+      pretraining_epochs: 50
+    stage3:
+      n_candidate_subsets: 500
+      cv_folds: 10

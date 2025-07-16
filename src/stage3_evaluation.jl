@@ -1,155 +1,569 @@
-using MLJ, Random, DataFrames, Statistics
+"""
+Stage 3: Real model evaluation with multiple algorithms.
+Reduces 50 features to 10-20 features using precise model evaluation.
+"""
 
-function stage3_evaluation(X::Matrix{Float64}, y::Vector, feature_names::Vector{String}, target_features::Int, problem_type::String)
-    # Simplified approach: just use correlation-based selection as a proxy
-    # This avoids model loading issues while still providing functionality
+using MLJ, Statistics, Random, StatsBase, XGBoost, DataFrames
+using MLJXGBoostInterface
+using MLJDecisionTreeInterface
+
+# Suppress XGBoost verbose output
+ENV["XGBOOST_VERBOSITY"] = "0"
+XGBoost.setparam!("verbosity", 0)
+
+"""
+Stage 3: Precise model evaluation with multiple algorithms.
+Reduces 50 features to 10-20 features using real model CV scores.
+"""
+function stage3_precise_evaluation(
+    X::Matrix{Float32},
+    y::Vector{Float32},
+    feature_names::Vector{String},
+    problem_type::String;
+    n_candidates::Int=100,
+    target_range::Tuple{Int,Int}=(max(5, div(size(X,2), 4)), min(size(X,2), div(size(X,2), 2))),
+    cv_folds::Int=5,
+    xgboost_params::Dict=Dict(),
+    rf_params::Dict=Dict()
+)
+    println("\n" * "="^60)
+    println("=== Stage 3: Precise Model Evaluation ===")
+    println("="^60)
     
-    n_features = size(X, 2)
-    # Ensure we don't try to increase features
-    actual_target = min(target_features, n_features)
+    n_samples, n_features = size(X)
+    target_min, target_max = target_range
     
-    println("\n=== Stage 3: Final Evaluation ===")
-    println("Input: $(size(X, 2)) features → Reducing to: $actual_target features")
+    println("Input: $n_samples samples × $n_features features")
+    println("Problem type: $problem_type")
     
+    # Setup evaluation models with custom parameters
+    models = setup_evaluation_models(problem_type, xgboost_params, rf_params)
+    println("Models configured: $(join(keys(models), ", "))")
+    
+    # Generate candidate feature subsets
+    candidate_subsets = generate_candidate_subsets(n_features, target_min, target_max, n_candidates)
+    println("Generated $(length(candidate_subsets)) candidate feature subsets")
+    
+    # Evaluate each subset with all models
     best_score = 0.0
     best_features = String[]
-    best_model = "SimpleCorrelation"
+    best_model_name = ""
+    best_subset_size = 0
     
-    # Try different feature combinations
-    n_combinations = min(20, 2^n_features)  # Limit combinations
+    # Track scores and best features for each model
+    model_scores = Dict{String, Vector{Float64}}()
+    model_best_features = Dict{String, Tuple{Vector{String}, Float64}}()
+    for model_name in keys(models)
+        model_scores[model_name] = Float64[]
+        model_best_features[model_name] = (String[], 0.0)
+    end
     
-    for combo in 1:n_combinations
-        # Generate random feature subset
-        mask = rand(n_features) .< (actual_target / n_features)
-        selected_count = sum(mask)
-        
-        if selected_count < 1 || selected_count > actual_target
-            continue
+    println("\nEvaluating feature combinations...")
+    
+    for (i, subset_indices) in enumerate(candidate_subsets)
+        if i % 20 == 0
+            println("  Progress: $i/$(length(candidate_subsets)) ($(round(100*i/length(candidate_subsets), digits=1))%)")
         end
         
-        X_subset = X[:, mask]
-        current_features = feature_names[mask]
+        X_subset = X[:, subset_indices]
+        current_features = feature_names[subset_indices]
         
-        # Simple correlation-based evaluation
-        try
-            if size(X_subset, 2) > 0
-                score = simple_correlation_score(X_subset, y)
+        # Evaluate with each model type
+        for (model_name, model) in models
+            try
+                score = evaluate_model_cv(model, X_subset, y, problem_type, folds=cv_folds)
+                push!(model_scores[model_name], score)
+                
+                # Track best for each model
+                if score > model_best_features[model_name][2]
+                    model_best_features[model_name] = (copy(current_features), score)
+                end
                 
                 if score > best_score
                     best_score = score
                     best_features = copy(current_features)
-                    best_model = "SimpleCorrelation"
+                    best_model_name = model_name
+                    best_subset_size = length(subset_indices)
+                end
+                
+                # Show detailed results for first few subsets
+                if i <= 3
+                    println("    Subset $i ($(length(subset_indices)) features) - $model_name: $(round(score, digits=4))")
+                end
+                
+            catch e
+                if i <= 5  # Only show first few errors to avoid spam
+                    println("    Warning: $model_name failed on subset $i: $(typeof(e))")
                 end
             end
-        catch e
-            println("Warning: Evaluation failed on subset: $e")
         end
     end
     
-    # Ensure we have some features selected
-    if isempty(best_features) && n_features > 0
-        # Fallback: select top features by correlation
-        scores = [abs(cor(X[:, i], y)) for i in 1:n_features if var(X[:, i]) > 1e-10]
+    # Results summary
+    println("\n" * "="^60)
+    println("=== Stage 3 Results ===")
+    println("="^60)
+    println("Features selected: $(length(best_features)) / $n_features")
+    println("Final reduction: $(round(100 * (1 - length(best_features)/n_features), digits=1))%")
+    println("Best model: $best_model_name")
+    println("Best CV score: $(round(best_score, digits=4))")
+    
+    # Model performance summary
+    println("\nModel Performance Summary:")
+    for (model_name, scores) in model_scores
         if !isempty(scores)
-            n_select = min(actual_target, length(scores))
-            indices = sortperm(scores, rev=true)[1:n_select]
-            best_features = feature_names[indices]
-            best_score = mean(scores[indices])
-            best_model = "SimpleCorrelation"
+            mean_score = mean(scores)
+            max_score = maximum(scores)
+            min_score = minimum(scores)
+            std_score = std(scores)
+            println("  $model_name:")
+            println("    Mean CV score: $(round(mean_score, digits=4))")
+            println("    Best CV score: $(round(max_score, digits=4))")
+            println("    Worst CV score: $(round(min_score, digits=4))")
+            println("    Std deviation: $(round(std_score, digits=4))")
+            println("    Evaluations: $(length(scores))")
+            
+            # Show best feature set for this model
+            best_feat, best_sc = model_best_features[model_name]
+            if !isempty(best_feat)
+                println("    Best feature set ($(length(best_feat)) features): $(round(best_sc, digits=4))")
+                for (idx, feat) in enumerate(best_feat[1:min(5, end)])
+                    println("      $idx. $feat")
+                end
+                if length(best_feat) > 5
+                    println("      ... and $(length(best_feat) - 5) more")
+                end
+            end
         end
     end
     
-    println("Final selection: $(length(best_features)) features")
-    println("Best model: $best_model")
-    println("Best score: $(round(best_score, digits=4))")
-    println("Selected features: $best_features")
-    
-    return best_features, best_score, best_model
-end
-
-function simple_correlation_score(X::Matrix{Float64}, y::Vector)
-    n_features = size(X, 2)
-    if n_features == 0
-        return 0.0
-    end
-    
-    scores = Float64[]
-    for i in 1:n_features
-        if var(X[:, i]) > 1e-10
-            push!(scores, abs(cor(X[:, i], y)))
+    if length(best_features) > 0
+        println("Selected features:")
+        for i in 1:min(length(best_features), 15)
+            println("  $i. $(best_features[i])")
+        end
+        if length(best_features) > 15
+            println("  ... and $(length(best_features) - 15) more")
         end
     end
     
-    return isempty(scores) ? 0.0 : mean(scores)
+    println("✅ Stage 3 completed successfully")
+    return best_features, best_score, best_model_name
 end
 
-function create_xgboost_model(problem_type::String)
-    try
-        if problem_type == "binary_classification" || problem_type == "classification"
-            return @load XGBoostClassifier pkg=MLJXGBoostInterface
-        else
-            return @load XGBoostRegressor pkg=MLJXGBoostInterface
-        end
-    catch e
-        println("XGBoost not available: $e")
-        # Fallback to DecisionTree if XGBoost is not available
-        return create_simple_model(problem_type)
-    end
-end
-
-function create_rf_model(problem_type::String)
-    # Use simple DecisionTree classifier since BetaML is having issues
-    return create_simple_model(problem_type)
-end
-
-function create_lgb_model(problem_type::String)
-    # For now, just use simple models as LightGBM requires additional setup
-    return create_simple_model(problem_type)
-end
-
-function create_simple_model(problem_type::String)
-    try
-        if problem_type == "binary_classification" || problem_type == "classification"
-            return @load DecisionTreeClassifier pkg=MLJDecisionTreeInterface
-        else
-            return @load DecisionTreeRegressor pkg=MLJDecisionTreeInterface
-        end
-    catch e
-        println("DecisionTree not available: $e")
-        # Ultimate fallback to dummy classifier
-        if problem_type == "binary_classification" || problem_type == "classification"
-            return @load DummyClassifier pkg=MLJModels
-        else
-            return @load DummyRegressor pkg=MLJModels
-        end
-    end
-end
-
-function cross_validate_model(model_type, X::Matrix{Float64}, y::Vector, problem_type::String)
-    # Simple train/test split evaluation
-    n = length(y)
-    train_idx = 1:Int(0.8 * n)
-    test_idx = (Int(0.8 * n) + 1):n
-    
-    X_train, X_test = X[train_idx, :], X[test_idx, :]
-    y_train, y_test = y[train_idx], y[test_idx]
-    
-    # Convert to DataFrame for MLJ
-    df_train = DataFrame(X_train, :auto)
-    df_test = DataFrame(X_test, :auto)
-    
-    model = model_type()
-    mach = machine(model, df_train, y_train)
-    fit!(mach, verbosity=0)
-    
-    predictions = predict(mach, df_test)
+"""
+Setup evaluation models based on problem type.
+"""
+function setup_evaluation_models(problem_type::String, xgboost_params::Dict=Dict(), rf_params::Dict=Dict())
+    models = Dict{String, Any}()
     
     if problem_type == "binary_classification" || problem_type == "classification"
-        # Classification accuracy
-        pred_labels = mode.(predictions)
-        return mean(pred_labels .== y_test)
+        println("Setting up classification models...")
+        
+        # XGBoost Classifier
+        default_xgb_params = Dict(
+            :num_round => 100,
+            :max_depth => 6,
+            :eta => 0.1,
+            :objective => "binary:logistic",
+            :eval_metric => "logloss",
+            :verbosity => 0,
+            :silent => 1
+        )
+        # Merge with user-provided params
+        merged_xgb_params = merge(default_xgb_params, xgboost_params)
+        models["XGBoost"] = Dict(
+            :model_type => :xgboost,
+            :params => merged_xgb_params
+        )
+        
+        # Random Forest Classifier
+        try
+            RandomForestClassifier = @load RandomForestClassifier pkg=DecisionTree
+            default_rf_params = Dict(:n_trees => 100, :max_depth => 10)
+            merged_rf_params = merge(default_rf_params, rf_params)
+            models["RandomForest"] = Dict(
+                :model_type => :mlj,
+                :model => RandomForestClassifier(),
+                :params => merged_rf_params
+            )
+        catch e
+            println("  Warning: RandomForest not available: $e")
+        end
+        
+        # Logistic Regression
+        try
+            LogisticClassifier = @load LogisticClassifier pkg=MLJLinearModels
+            models["Logistic"] = Dict(
+                :model_type => :mlj,
+                :model => LogisticClassifier(),
+                :params => Dict()
+            )
+        catch e
+            println("  Warning: LogisticClassifier not available: $e")
+        end
+        
+    else
+        println("Setting up regression models...")
+        
+        # XGBoost Regressor
+        default_xgb_params = Dict(
+            :num_round => 100,
+            :max_depth => 6,
+            :eta => 0.1,
+            :objective => "reg:squarederror",
+            :eval_metric => "rmse",
+            :verbosity => 0,
+            :silent => 1
+        )
+        merged_xgb_params = merge(default_xgb_params, xgboost_params)
+        models["XGBoost"] = Dict(
+            :model_type => :xgboost,
+            :params => merged_xgb_params
+        )
+        
+        # Random Forest Regressor
+        try
+            RandomForestRegressor = @load RandomForestRegressor pkg=DecisionTree
+            default_rf_params = Dict(:n_trees => 100, :max_depth => 10)
+            merged_rf_params = merge(default_rf_params, rf_params)
+            models["RandomForest"] = Dict(
+                :model_type => :mlj,
+                :model => RandomForestRegressor(),
+                :params => merged_rf_params
+            )
+        catch e
+            println("  Warning: RandomForest not available: $e")
+        end
+        
+        # Linear Regression
+        try
+            LinearRegressor = @load LinearRegressor pkg=MLJLinearModels
+            models["Linear"] = Dict(
+                :model_type => :mlj,
+                :model => LinearRegressor(),
+                :params => Dict()
+            )
+        catch e
+            println("  Warning: LinearRegressor not available: $e")
+        end
+    end
+    
+    return models
+end
+
+"""
+Cross-validation evaluation for a single model.
+"""
+function evaluate_model_cv(model_config::Dict, X::Matrix{Float32}, y::Vector{Float32}, 
+                          problem_type::String; folds::Int=5)
+    
+    n_samples = size(X, 1)
+    
+    # Handle small datasets
+    if n_samples < folds * 2
+        folds = max(2, div(n_samples, 2))
+    end
+    
+    fold_size = div(n_samples, folds)
+    scores = Float64[]
+    
+    for fold in 1:folds
+        # Create train/test split
+        test_start = (fold - 1) * fold_size + 1
+        test_end = fold == folds ? n_samples : fold * fold_size
+        
+        test_indices = test_start:test_end
+        train_indices = setdiff(1:n_samples, test_indices)
+        
+        # Handle edge case
+        if length(train_indices) == 0 || length(test_indices) == 0
+            continue
+        end
+        
+        X_train, X_test = X[train_indices, :], X[test_indices, :]
+        y_train, y_test = y[train_indices], y[test_indices]
+        
+        # Evaluate based on model type
+        if model_config[:model_type] == :xgboost
+            score = evaluate_xgboost(model_config[:params], X_train, y_train, X_test, y_test, problem_type)
+        elseif model_config[:model_type] == :mlj
+            score = evaluate_mlj_model(model_config[:model], X_train, y_train, X_test, y_test, problem_type)
+        else
+            error("Unknown model type: $(model_config[:model_type])")
+        end
+        
+        push!(scores, score)
+    end
+    
+    return length(scores) > 0 ? mean(scores) : 0.0
+end
+
+"""
+Evaluate XGBoost model.
+"""
+function evaluate_xgboost(params::Dict, X_train::Matrix{Float32}, y_train::Vector{Float32},
+                         X_test::Matrix{Float32}, y_test::Vector{Float32}, problem_type::String)
+    
+    # Train model
+    dtrain = XGBoost.DMatrix(X_train, label=y_train)
+    model = XGBoost.xgboost(dtrain; params...)
+    
+    # Predict
+    dtest = XGBoost.DMatrix(X_test)
+    predictions = XGBoost.predict(model, dtest)
+    
+    # Calculate metric
+    if problem_type == "binary_classification" || problem_type == "classification"
+        # Binary classification accuracy
+        pred_labels = predictions .> 0.5
+        actual_labels = y_test .> 0.5
+        return mean(pred_labels .== actual_labels)
     else
         # Regression R²
-        return 1 - sum((predictions .- y_test).^2) / sum((y_test .- mean(y_test)).^2)
+        ss_res = sum((y_test .- predictions).^2)
+        ss_tot = sum((y_test .- mean(y_test)).^2)
+        return max(0.0, 1.0 - (ss_res / (ss_tot + 1e-10)))
     end
+end
+
+"""
+Evaluate MLJ model.
+"""
+function evaluate_mlj_model(model, X_train::Matrix{Float32}, y_train::Vector{Float32},
+                           X_test::Matrix{Float32}, y_test::Vector{Float32}, problem_type::String)
+    
+    # Convert to DataFrames for MLJ
+    X_train_df = DataFrame(X_train, :auto)
+    X_test_df = DataFrame(X_test, :auto)
+    
+    # Create and train machine
+    mach = machine(model, X_train_df, y_train)
+    
+    try
+        fit!(mach, verbosity=0)
+        
+        # Predict
+        predictions = predict(mach, X_test_df)
+        
+        # Calculate metric
+        if problem_type == "binary_classification" || problem_type == "classification"
+            # For classification, extract mode of predictions
+            if eltype(predictions) <: MLJ.CategoricalDistributions.UnivariateFinite
+                pred_labels = mode.(predictions)
+                return mean(pred_labels .== y_test)
+            else
+                # Direct predictions
+                pred_labels = predictions .> 0.5
+                actual_labels = y_test .> 0.5
+                return mean(pred_labels .== actual_labels)
+            end
+        else
+            # Regression R²
+            ss_res = sum((predictions .- y_test).^2)
+            ss_tot = sum((y_test .- mean(y_test)).^2)
+            return max(0.0, 1.0 - (ss_res / (ss_tot + 1e-10)))
+        end
+        
+    catch e
+        return 0.0  # Return 0 score on failure
+    end
+end
+
+"""
+Generate candidate feature subsets for evaluation.
+"""
+function generate_candidate_subsets(n_features::Int, target_min::Int, target_max::Int, 
+                                  n_candidates::Int=100)
+    candidates = Vector{Int}[]
+    
+    # Strategy 1: Random subsets of various sizes (40%)
+    n_random = div(n_candidates * 4, 10)
+    for _ in 1:n_random
+        subset_size = rand(target_min:target_max)
+        subset = sample(1:n_features, subset_size, replace=false)
+        push!(candidates, sort(subset))
+    end
+    
+    # Strategy 2: Top features + random (30%)
+    n_top = div(n_candidates * 3, 10)
+    for _ in 1:n_top
+        subset_size = rand(target_min:target_max)
+        # Take some top features
+        n_top_features = div(subset_size, 2)
+        top_features = 1:min(n_top_features, n_features)
+        
+        # Add random features
+        remaining_size = subset_size - length(top_features)
+        if remaining_size > 0 && length(top_features) < n_features
+            remaining_features = sample((length(top_features)+1):n_features, 
+                                      min(remaining_size, n_features - length(top_features)), 
+                                      replace=false)
+            subset = vcat(collect(top_features), remaining_features)
+        else
+            subset = collect(top_features)
+        end
+        push!(candidates, sort(subset))
+    end
+    
+    # Strategy 3: Sequential windows (20%)
+    n_windows = div(n_candidates * 2, 10)
+    for _ in 1:n_windows
+        subset_size = rand(target_min:target_max)
+        if subset_size <= n_features
+            max_start = n_features - subset_size + 1
+            start_idx = rand(1:max_start)
+            subset = collect(start_idx:(start_idx + subset_size - 1))
+            push!(candidates, subset)
+        end
+    end
+    
+    # Strategy 4: Uniform spacing (10%)
+    n_uniform = n_candidates - length(candidates)
+    for _ in 1:n_uniform
+        subset_size = rand(target_min:target_max)
+        if subset_size <= n_features
+            step = div(n_features, subset_size)
+            subset = collect(1:step:n_features)[1:subset_size]
+            push!(candidates, subset)
+        end
+    end
+    
+    # Remove duplicates and ensure valid sizes
+    unique_candidates = unique(candidates)
+    valid_candidates = [c for c in unique_candidates if target_min <= length(c) <= target_max]
+    
+    # Ensure we have enough candidates
+    while length(valid_candidates) < n_candidates
+        subset_size = rand(target_min:target_max)
+        subset = sample(1:n_features, subset_size, replace=false)
+        push!(valid_candidates, sort(subset))
+        valid_candidates = unique(valid_candidates)
+    end
+    
+    return valid_candidates[1:min(n_candidates, length(valid_candidates))]
+end
+
+"""
+Advanced feature selection with ensemble evaluation.
+"""
+function stage3_ensemble_evaluation(
+    X::Matrix{Float32},
+    y::Vector{Float32},
+    feature_names::Vector{String},
+    problem_type::String;
+    n_candidates::Int=50,
+    target_range::Tuple{Int,Int}=(10, 20)
+)
+    println("\n=== Stage 3: Ensemble Evaluation ===")
+    
+    n_features = size(X, 2)
+    target_min, target_max = target_range
+    
+    # Setup multiple models
+    models = setup_evaluation_models(problem_type)
+    
+    # Generate candidates
+    candidates = generate_candidate_subsets(n_features, target_min, target_max, n_candidates)
+    
+    # Evaluate each candidate with all models
+    ensemble_scores = Dict{Vector{Int}, Float64}()
+    
+    for (i, subset_indices) in enumerate(candidates)
+        if i % 10 == 0
+            println("  Ensemble progress: $i/$n_candidates")
+        end
+        
+        X_subset = X[:, subset_indices]
+        scores = Float64[]
+        
+        # Evaluate with each model
+        for (model_name, model) in models
+            try
+                score = evaluate_model_cv(model, X_subset, y, problem_type, folds=cv_folds)
+                push!(scores, score)
+            catch e
+                # Skip failed models
+                continue
+            end
+        end
+        
+        # Ensemble score (mean of all models)
+        if !isempty(scores)
+            ensemble_scores[subset_indices] = mean(scores)
+        end
+    end
+    
+    # Find best ensemble score
+    if !isempty(ensemble_scores)
+        best_subset = argmax(ensemble_scores)
+        best_score = ensemble_scores[best_subset]
+        best_features = feature_names[best_subset]
+        
+        println("✅ Ensemble evaluation completed")
+        println("  Best ensemble score: $(round(best_score, digits=4))")
+        println("  Selected $(length(best_features)) features")
+        
+        return best_features, best_score, "Ensemble"
+    else
+        error("No valid ensemble evaluations completed")
+    end
+end
+
+"""
+Feature stability analysis across CV folds.
+"""
+function analyze_feature_stability(
+    X::Matrix{Float32},
+    y::Vector{Float32},
+    feature_names::Vector{String},
+    problem_type::String;
+    n_bootstrap::Int=20,
+    target_size::Int=15
+)
+    println("\n=== Feature Stability Analysis ===")
+    
+    n_samples, n_features = size(X)
+    feature_counts = zeros(Int, n_features)
+    
+    # Bootstrap sampling
+    for boot in 1:n_bootstrap
+        # Bootstrap sample
+        boot_indices = sample(1:n_samples, n_samples, replace=true)
+        X_boot = X[boot_indices, :]
+        y_boot = y[boot_indices]
+        
+        # Feature selection on bootstrap sample
+        _, _, selected_indices = stage3_precise_evaluation(
+            X_boot, y_boot, feature_names, problem_type,
+            n_candidates=20, target_range=(target_size, target_size)
+        )
+        
+        # Update feature counts
+        for idx in selected_indices
+            if 1 <= idx <= n_features
+                feature_counts[idx] += 1
+            end
+        end
+        
+        if boot % 5 == 0
+            println("  Bootstrap progress: $boot/$n_bootstrap")
+        end
+    end
+    
+    # Calculate stability scores
+    stability_scores = feature_counts ./ n_bootstrap
+    
+    # Select most stable features
+    stable_indices = sortperm(stability_scores, rev=true)[1:target_size]
+    stable_features = feature_names[stable_indices]
+    
+    println("✅ Stability analysis completed")
+    println("  Most stable features (selected in $(round(100*stability_scores[stable_indices[1]], digits=1))% of bootstraps):")
+    for i in 1:min(10, length(stable_features))
+        stability_pct = round(100 * stability_scores[stable_indices[i]], digits=1)
+        println("    $i. $(stable_features[i]) ($(stability_pct)%)")
+    end
+    
+    return stable_features, stability_scores[stable_indices], "Stability"
 end

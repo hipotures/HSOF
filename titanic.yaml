@@ -1,0 +1,9 @@
+name: titanic
+database:
+  path: /home/xai/.mdm/datasets/titanic/titanic.sqlite
+feature_tables:
+  train_features: train_features
+target_column: Survived
+id_columns:
+  - PassengerId
+problem_type: binary_classification
